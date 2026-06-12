@@ -1,0 +1,10 @@
+src/
+test/
+scripts/
+node_modules/
+.olap/
+coverage/
+*.tgz
+tsconfig.json
+vitest.config.ts
+eslint.config.js

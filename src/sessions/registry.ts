@@ -1,0 +1,129 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { AdapterId, SessionRecord } from "../types.js";
+
+export const SESSIONS_DIR = ".olap/sessions";
+export const SESSION_INDEX = "index.json";
+
+function sessionsRoot(cwd: string): string {
+  return join(cwd, SESSIONS_DIR);
+}
+
+function indexPath(cwd: string): string {
+  return join(sessionsRoot(cwd), SESSION_INDEX);
+}
+
+function sessionPath(cwd: string, sessionId: string): string {
+  return join(sessionsRoot(cwd), `${sessionId}.json`);
+}
+
+export function createSessionId(now = new Date()): string {
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `sess-${stamp}-${suffix}`;
+}
+
+function taskSummary(task: string, maxLen = 120): string {
+  const trimmed = task.trim().replace(/\s+/g, " ");
+  return trimmed.length <= maxLen ? trimmed : `${trimmed.slice(0, maxLen - 3)}...`;
+}
+
+async function readIndex(cwd: string): Promise<SessionRecord[]> {
+  try {
+    const text = await readFile(indexPath(cwd), "utf8");
+    const parsed = JSON.parse(text) as SessionRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeIndex(cwd: string, sessions: SessionRecord[]): Promise<void> {
+  const dir = sessionsRoot(cwd);
+  await mkdir(dir, { recursive: true });
+  await writeFile(indexPath(cwd), JSON.stringify(sessions, null, 2) + "\n", "utf8");
+}
+
+export async function registerSession(options: {
+  cwd: string;
+  task: string;
+  adapter: AdapterId | "none";
+  runId: string;
+  sessionId?: string;
+  now?: Date;
+}): Promise<SessionRecord> {
+  const now = options.now ?? new Date();
+  const sessionId = options.sessionId ?? createSessionId(now);
+  const dir = sessionsRoot(options.cwd);
+  await mkdir(dir, { recursive: true });
+
+  const existingPath = sessionPath(options.cwd, sessionId);
+  let record: SessionRecord;
+  try {
+    const text = await readFile(existingPath, "utf8");
+    record = JSON.parse(text) as SessionRecord;
+    record.updated_at = now.toISOString();
+    record.run_ids = [...record.run_ids, options.runId];
+    record.adapter = options.adapter;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    record = {
+      id: sessionId,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      task_summary: taskSummary(options.task),
+      status: "active",
+      run_ids: [options.runId],
+      adapter: options.adapter,
+    };
+  }
+
+  await writeFile(existingPath, JSON.stringify(record, null, 2) + "\n", "utf8");
+
+  const index = await readIndex(options.cwd);
+  const without = index.filter((session) => session.id !== sessionId);
+  without.push(record);
+  without.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  await writeIndex(options.cwd, without);
+
+  return record;
+}
+
+export async function getSession(
+  cwd: string,
+  sessionId: string,
+): Promise<SessionRecord | undefined> {
+  try {
+    const text = await readFile(sessionPath(cwd, sessionId), "utf8");
+    return JSON.parse(text) as SessionRecord;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+export async function listSessions(cwd: string): Promise<SessionRecord[]> {
+  return readIndex(cwd);
+}
+
+export async function completeSession(
+  cwd: string,
+  sessionId: string,
+  status: "completed" | "failed" = "completed",
+  now = new Date(),
+): Promise<SessionRecord | undefined> {
+  const record = await getSession(cwd, sessionId);
+  if (!record) return undefined;
+
+  record.status = status;
+  record.updated_at = now.toISOString();
+  await writeFile(sessionPath(cwd, sessionId), JSON.stringify(record, null, 2) + "\n", "utf8");
+
+  const index = await readIndex(cwd);
+  await writeIndex(
+    cwd,
+    index.map((session) => (session.id === sessionId ? record : session)),
+  );
+  return record;
+}

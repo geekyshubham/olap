@@ -1,0 +1,66 @@
+{
+  "name": "@geekyshubham/olap",
+  "version": "0.1.0",
+  "description": "OLAP — orchestrated loop architect/worker CLI with terminal UI",
+  "type": "module",
+  "license": "MIT",
+  "author": "geekyshubham",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geekyshubham/olap.git"
+  },
+  "homepage": "https://github.com/geekyshubham/olap#readme",
+  "bugs": {
+    "url": "https://github.com/geekyshubham/olap/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "cli",
+    "olap",
+    "architect",
+    "worker",
+    "agent",
+    "orchestration",
+    "terminal-ui",
+    "pi",
+    "grok",
+    "claude",
+    "gemini",
+    "codex"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "olap": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test && npm run lint && npm run pack:check",
+    "pack:check": "bash scripts/pack-check.sh",
+    "smoke:cli": "bash scripts/smoke-cli.sh"
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.79.1",
+    "commander": "^13.1.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.27.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^3.1.2"
+  }
+}
