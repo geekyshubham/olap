@@ -1,6 +1,6 @@
 {
   "name": "@geekyshubham/olap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OLAP — orchestrated loop architect/worker CLI with terminal UI",
   "type": "module",
   "license": "MIT",

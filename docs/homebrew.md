@@ -23,7 +23,7 @@ class Olap < Formula
   depends_on "node@22"
 
   def install
-    system Formula["node@22"].opt_bin/"npm", "install", *std_npm_args(prefix: false)
+    system Formula["node@22"].opt_bin/"npm", "install", *std_npm_args
     bin.install_symlink libexec/"bin/olap"
   end
 

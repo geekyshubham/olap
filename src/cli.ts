@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { Command } from "commander";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { initCommand } from "./commands/init.js";
 import { adaptersCommand, printAdapters } from "./commands/adapters.js";
 import { runCommand, printRunResult } from "./commands/run.js";
@@ -83,10 +84,21 @@ export async function runCli(argv = process.argv): Promise<void> {
   await createCliProgram().parseAsync(argv);
 }
 
-const isEntrypoint =
-  process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url;
+function isCliEntrypoint(): boolean {
+  const executed = process.argv[1];
+  if (executed === undefined) {
+    return false;
+  }
 
-if (isEntrypoint) {
+  const entrypoint = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(executed) === realpathSync(entrypoint);
+  } catch {
+    return pathToFileURL(executed).href === import.meta.url;
+  }
+}
+
+if (isCliEntrypoint()) {
   runCli().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
