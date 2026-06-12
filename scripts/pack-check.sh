@@ -12,7 +12,8 @@ TARBALL="$(npm pack --silent)"
 trap 'rm -f "$TARBALL"' EXIT
 
 echo "==> tarball: $TARBALL"
-tar -tzf "$TARBALL" | sort
+LISTING="$(tar -tzf "$TARBALL" | tr -d '\r')"
+printf '%s\n' "$LISTING" | sort
 
 echo "==> required paths"
 for path in \
@@ -23,7 +24,7 @@ for path in \
   package/README.md \
   package/LICENSE
 do
-  if ! tar -tzf "$TARBALL" | grep -qx "$path"; then
+  if ! printf '%s\n' "$LISTING" | grep -Fxq "$path"; then
     echo "missing: $path" >&2
     exit 1
   fi
@@ -31,7 +32,7 @@ done
 
 echo "==> excluded paths"
 for forbidden in package/src package/test package/scripts package/.olap; do
-  if tar -tzf "$TARBALL" | grep -q "^${forbidden}"; then
+  if printf '%s\n' "$LISTING" | grep -q "^${forbidden}"; then
     echo "should not include: $forbidden" >&2
     exit 1
   fi
