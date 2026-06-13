@@ -1,6 +1,21 @@
-export type AdapterId = "grok" | "claude" | "gemini" | "codex";
+export type AdapterId = "grok" | "claude" | "gemini" | "codex" | "kiro";
 
 export type ArchitectVerdict = "pass" | "revise" | "fail";
+
+/** Roles that map to a concrete adapter + model. */
+export type RoleId = "orchestrator" | "worker";
+
+/** High-level operating mode, surfaced in the TUI and used to gate worker execution. */
+export type WorkMode = "plan" | "build" | "workflow";
+
+/** Approval policy applied to worker execution (maps per-adapter). */
+export type ApprovalPolicy = "untrusted" | "on-failure" | "on-request" | "never";
+
+/** Filesystem sandbox policy for worker execution (maps per-adapter). */
+export type SandboxPolicy = "read-only" | "workspace-write" | "danger-full-access";
+
+/** Whether the worker phase actually spawns processes or stays simulated. */
+export type ExecutionMode = "dry-run" | "live";
 
 export interface AdapterSpec {
   id: AdapterId;
@@ -10,6 +25,38 @@ export interface AdapterSpec {
 export interface AdapterOptions {
   model?: string;
   extra_args: string[];
+}
+
+/** A role binds an adapter (which CLI) to a model (which weights). */
+export interface RoleConfig {
+  adapter: AdapterId;
+  model: string;
+  /** Reasoning/effort level mapped to each CLI's flag; "default" omits it. */
+  effort?: string;
+}
+
+export interface UiConfig {
+  /** Active theme name from the theme registry. */
+  theme: string;
+  /** Active operating mode. */
+  mode: WorkMode;
+  /** Whether the animated banner is shown. */
+  banner: boolean;
+}
+
+export interface AccessConfig {
+  approval: ApprovalPolicy;
+  sandbox: SandboxPolicy;
+  /** Allow workers network access (sandbox-dependent). */
+  network: boolean;
+  /** dry-run keeps everything simulated; live spawns worker processes. */
+  execution: ExecutionMode;
+}
+
+export interface SubagentConfig {
+  enabled: boolean;
+  /** Maximum worker sub-agents allowed to run in parallel. */
+  max_parallel: number;
 }
 
 export interface ValidatorConfig {
@@ -41,6 +88,11 @@ export interface OlapConfig {
     fallback: AdapterId;
     options: Partial<Record<AdapterId, AdapterOptions>>;
   };
+  /** Role-based model selection: orchestrator plans/reviews, worker codes. */
+  roles: Record<RoleId, RoleConfig>;
+  ui: UiConfig;
+  access: AccessConfig;
+  subagents: SubagentConfig;
   architect: {
     output_budget_tokens: number;
     context_pack_max_tokens: number;
@@ -71,6 +123,15 @@ export interface AdapterCommand {
   shell: string;
   dry_run: boolean;
   phase: "architect" | "worker";
+}
+
+/** Resolved adapter + model + detection for a role. */
+export interface ResolvedRole {
+  role: RoleId;
+  adapter: AdapterId;
+  model: string;
+  detection?: AdapterDetection;
+  available: boolean;
 }
 
 export interface ContextPackFile {
@@ -127,6 +188,20 @@ export interface TokenSummary {
   tokens_in: number;
   tokens_out: number;
   efficiency: number;
+}
+
+/** Per-role usage accounting surfaced live in the TUI. */
+export interface RoleUsage {
+  tokens_in: number;
+  tokens_out: number;
+  calls: number;
+}
+
+export interface UsageSnapshot {
+  orchestrator: RoleUsage;
+  worker: RoleUsage;
+  subagents_spawned: number;
+  subagents_active: number;
 }
 
 export interface ValidatorResult {

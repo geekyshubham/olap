@@ -4,14 +4,27 @@ import { Command } from "commander";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { initCommand } from "./commands/init.js";
 import { adaptersCommand, printAdapters } from "./commands/adapters.js";
-import { runCommand, printRunResult } from "./commands/run.js";
+import { runCommand, printRunResult, type RunOptions } from "./commands/run.js";
 import { checkCommand, printCheckResults } from "./commands/check.js";
 import { modulesCommand, printModules } from "./commands/modules.js";
+import { modelsCommand, printModels } from "./commands/models.js";
+import { configCommand, printConfig } from "./commands/config.js";
 import { startTui } from "./tui/app.js";
-import { VERSION } from "./version.js";
+import { PACKAGE_NAME, VERSION } from "./version.js";
+import { checkForUpdate, formatUpdateNotice } from "./update-check.js";
 
 export interface CliDependencies {
   startTui?: typeof startTui;
+}
+
+interface RunCliOptions {
+  mode?: string;
+  orchestrator?: string;
+  worker?: string;
+  theme?: string;
+  live?: boolean;
+  dryRun?: boolean;
+  quiet?: boolean;
 }
 
 export function createCliProgram(deps: CliDependencies = {}): Command {
@@ -43,6 +56,22 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     });
 
   program
+    .command("models")
+    .description("List known models per adapter and which roles use them")
+    .action(async () => {
+      const listings = await modelsCommand();
+      printModels(listings);
+    });
+
+  program
+    .command("config")
+    .description("Print the resolved OLAP configuration (roles, ui, access, sub-agents)")
+    .action(async () => {
+      const config = await configCommand();
+      printConfig(config);
+    });
+
+  program
     .command("modules")
     .description("List built-in and configured Pi-compatible modules")
     .action(async () => {
@@ -52,11 +81,29 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
 
   program
     .command("run")
-    .description("Run simulated architect/worker loop for a task")
+    .description("Run the architect/worker loop for a task")
     .argument("<task>", "Task description")
-    .action(async (task: string) => {
-      const result = await runCommand(task);
+    .option("--mode <mode>", "Operating mode: plan | build | workflow")
+    .option("--orchestrator <adapter[:model]>", "Override orchestrator role")
+    .option("--worker <adapter[:model]>", "Override worker role")
+    .option("--theme <name>", "Theme to record for this run")
+    .option("--live", "Spawn the real worker CLI (uses your API key)")
+    .option("--dry-run", "Force dry-run simulation (default)")
+    .option("--quiet", "Suppress live event output")
+    .action(async (task: string, options: RunCliOptions) => {
+      const runOptions: RunOptions = {
+        mode: options.mode,
+        orchestrator: options.orchestrator,
+        worker: options.worker,
+        theme: options.theme,
+        quiet: options.quiet,
+        execution: options.live ? "live" : options.dryRun ? "dry-run" : undefined,
+      };
+      const result = await runCommand(task, runOptions);
       printRunResult(result);
+      if (result.status !== "completed") {
+        process.exitCode = 1;
+      }
     });
 
   program
@@ -72,7 +119,7 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
 
   program
     .command("tui")
-    .description("Open Claude-like terminal UI")
+    .description("Open the interactive terminal UI")
     .action(async () => {
       await startTuiImpl();
     });
@@ -82,6 +129,18 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
 
 export async function runCli(argv = process.argv): Promise<void> {
   await createCliProgram().parseAsync(argv);
+  await notifyUpdateOnCli();
+}
+
+async function notifyUpdateOnCli(): Promise<void> {
+  try {
+    const info = await checkForUpdate({ current: VERSION, packageName: PACKAGE_NAME });
+    if (info?.updateAvailable) {
+      console.error(formatUpdateNotice(info, PACKAGE_NAME));
+    }
+  } catch {
+    // Update checks must never fail a command.
+  }
 }
 
 function isCliEntrypoint(): boolean {

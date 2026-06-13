@@ -4,17 +4,41 @@ adapters:
   fallback: codex
   options:
     grok:
-      model: grok-composer
+      model: grok-code-fast-1
       extra_args: []
     claude:
       model: sonnet
       extra_args: []
     gemini:
-      model: gemini-pro
+      model: gemini-2.5-pro
       extra_args: []
     codex:
       model: gpt-5-codex
       extra_args: []
+    kiro:
+      model: ""
+      extra_args: []
+roles:
+  orchestrator:
+    adapter: kiro
+    model: claude-opus-4.8
+    effort: max
+  worker:
+    adapter: grok
+    model: grok-composer-2.5-fast
+    effort: max
+ui:
+  theme: mono
+  mode: build
+  banner: true
+access:
+  approval: on-failure
+  sandbox: workspace-write
+  network: false
+  execution: live
+subagents:
+  enabled: true
+  max_parallel: 6
 architect:
   output_budget_tokens: 4096
   context_pack_max_tokens: 32000

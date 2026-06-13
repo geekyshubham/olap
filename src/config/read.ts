@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { CONFIG_FILENAME, DEFAULT_CONFIG } from "./defaults.js";
-import type { AdapterId, OlapConfig } from "../types.js";
+import type { AdapterId, OlapConfig, RoleId } from "../types.js";
 
 function mergeAdapterOptions(
   partial: Partial<OlapConfig["adapters"]> | undefined,
@@ -25,11 +25,24 @@ function mergeAdapterOptions(
   };
 }
 
+function mergeRoles(partial: Partial<OlapConfig["roles"]> | undefined): OlapConfig["roles"] {
+  const base = DEFAULT_CONFIG.roles;
+  const roles = { ...base };
+  for (const role of Object.keys(base) as RoleId[]) {
+    roles[role] = { ...base[role], ...partial?.[role] };
+  }
+  return roles;
+}
+
 export function mergeConfig(partial: Partial<OlapConfig>): OlapConfig {
   return {
     ...DEFAULT_CONFIG,
     ...partial,
     adapters: mergeAdapterOptions(partial.adapters),
+    roles: mergeRoles(partial.roles),
+    ui: { ...DEFAULT_CONFIG.ui, ...partial.ui },
+    access: { ...DEFAULT_CONFIG.access, ...partial.access },
+    subagents: { ...DEFAULT_CONFIG.subagents, ...partial.subagents },
     architect: { ...DEFAULT_CONFIG.architect, ...partial.architect },
     worker: { ...DEFAULT_CONFIG.worker, ...partial.worker },
     modules: partial.modules ?? DEFAULT_CONFIG.modules,

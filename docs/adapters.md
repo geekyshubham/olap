@@ -1,35 +1,72 @@
 # Adapters
 
-OLAP separates orchestration from worker execution through adapter command builders. The adapter layer detects installed coding CLIs and builds phase-specific commands for architect and worker turns.
+OLAP separates orchestration from worker execution through adapter command builders. The adapter layer detects installed coding CLIs and builds phase-specific commands for the orchestrator (architect) and worker roles.
 
 ## Supported CLIs
 
 | Adapter | Binaries | Architect shape | Worker shape |
 | --- | --- | --- | --- |
-| Grok | `grok` | `grok -p <prompt>` | `grok --permission-mode bypassPermissions -p <prompt>` |
-| Claude | `claude` | `claude --print <prompt>` | `claude --print --permission-mode bypassPermissions <prompt>` |
-| Gemini | `gemini` | `gemini --prompt <prompt>` | `gemini --approval-mode yolo --prompt <prompt>` |
-| Codex | `codex` | `codex exec <prompt>` | `codex exec --ask-for-approval never <prompt>` |
+| Grok | `grok` | `grok --permission-mode plan -p <prompt>` | `grok --permission-mode <mode> -p <task>` |
+| Claude | `claude` | `claude --print --permission-mode plan <prompt>` | `claude --print --permission-mode <mode> <task>` |
+| Gemini | `gemini` | `gemini --approval-mode plan --prompt <prompt>` | `gemini --approval-mode <mode> --prompt <task>` |
+| Codex | `codex` | `codex exec --sandbox read-only <prompt>` | `codex exec --sandbox <policy> --ask-for-approval <policy> <task>` |
+| Kiro | `kiro-cli` | `kiro-cli chat --no-interactive --trust-tools=fs_read <prompt>` | `kiro-cli chat --no-interactive <trust flags> <task>` |
 
-Where supported, OLAP adds JSON output flags and model flags from `olap.config.yaml`.
+Builders add the role's model via the adapter's `--model` flag (omitted when no model is pinned, so the CLI uses its own default), and JSON output flags where the CLI supports them. The architect phase always runs read-only / plan, regardless of access settings, because planning should never write.
 
-## Selection
+## Roles
+
+Each phase resolves a role to a concrete adapter + model:
+
+- the orchestrator phase uses `roles.orchestrator`
+- the worker phase uses `roles.worker`
+
+Because the roles are independent, you can plan with one CLI and build with another (e.g. orchestrate with `claude:opus`, work with `grok:grok-code-fast-1`). `resolveRoles()` reports whether each role's adapter was detected on `PATH`.
+
+## Access mapping
+
+Worker commands map `access` settings into each CLI's real permission vocabulary:
+
+| OLAP access | grok / claude `--permission-mode` | gemini `--approval-mode` | codex |
+| --- | --- | --- | --- |
+| `sandbox: read-only` | `plan` | `plan` | `--sandbox read-only` |
+| `approval: untrusted` | `default` | `default` | `--ask-for-approval untrusted` |
+| `approval: on-failure` / `on-request` | `acceptEdits` | `auto_edit` | `--ask-for-approval on-failure` / `on-request` |
+| `approval: never` | `bypassPermissions` | `yolo` | `--ask-for-approval never` |
+| `sandbox: danger-full-access` | `bypassPermissions` | `yolo` | `--sandbox danger-full-access` |
+
+When `network: true` and `sandbox: workspace-write`, the codex worker also receives `-c sandbox_workspace_write.network_access=true`.
+
+Kiro maps the same access vocabulary to `kiro-cli chat` trust flags: `read-only` → `--trust-tools=fs_read`, `untrusted` → `--trust-tools=`, `on-failure`/`on-request` → `--trust-tools=fs_read,fs_write`, and `never` / `danger-full-access` → `--trust-all-tools`.
+
+## Model discovery
+
+`olap models` and the TUI model pickers ask each installed CLI for its models where possible, falling back to a built-in catalog:
+
+- Grok: runs `grok models` and parses the reported list (including the default).
+- Other adapters use the static catalog; Kiro defers to its own configured default model unless you pin one.
+
+Discovered models are cached in-process and refreshed on startup, so the pickers reflect what your CLIs actually support rather than a fixed guess.
+
+## Selection and detection
 
 1. Detect available binaries on `PATH`.
-2. Use `adapters.preferred` if detected.
-3. Use `adapters.fallback` if the preferred adapter is missing.
-4. Continue in `none` mode if no configured adapter is available.
+2. Resolve `roles.orchestrator` and `roles.worker` to adapters + models.
+3. `adapters.preferred` / `adapters.fallback` remain for backward compatibility.
 
-`none` mode is still useful for checking context packing, review schema behavior, sessions, validators, and artifact generation.
+If a role's adapter is missing, dry-run still builds and records its command so you can inspect it; live execution is skipped.
 
-## Safety
+## Execution
 
-The current run loop is simulated. Adapter commands are generated and written to artifacts, but they are not spawned. This keeps development safe while the command contracts settle.
+The run loop honors `access.execution`:
 
-Real execution should keep the same boundaries:
+- `dry-run` (default) — builds and records adapter commands without spawning them. No paid API calls.
+- `live` — spawns the worker adapter process, streams its stdout/stderr into the timeline, and records token usage parsed from JSON output. Live is skipped in `plan` mode and when the worker adapter is not installed.
 
-- architect phases emit compact structured reviews
-- worker phases receive the task, context pack, and latest review
+In both modes:
+
+- orchestrator phases emit compact structured reviews
+- worker phases receive the task, context pack, and access-mapped flags
 - all output is captured into `.olap/runs/<run-id>`
 - validators remain repo-defined commands
 
@@ -37,6 +74,7 @@ Real execution should keep the same boundaries:
 
 1. Add the adapter id to `AdapterId`.
 2. Add binary detection in `src/adapters/detect.ts`.
-3. Add command construction in `src/adapters/build.ts`.
-4. Add defaults in `src/config/defaults.ts`.
-5. Add tests for detection and generated commands.
+3. Add command construction (architect + worker, with access mapping) in `src/adapters/build.ts`.
+4. Add models to the catalog in `src/adapters/models.ts`.
+5. Add defaults in `src/config/defaults.ts`.
+6. Add tests for detection, generated commands, and access mapping.

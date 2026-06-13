@@ -7,6 +7,7 @@ export const ADAPTER_SPECS: AdapterSpec[] = [
   { id: "claude", binaries: ["claude", "claude-code"] },
   { id: "gemini", binaries: ["gemini", "gemini-cli"] },
   { id: "codex", binaries: ["codex", "codex-cli"] },
+  { id: "kiro", binaries: ["kiro-cli", "kiro"] },
 ];
 
 async function isExecutable(path: string): Promise<boolean> {
