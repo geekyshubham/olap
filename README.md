@@ -25,7 +25,7 @@ The terminal UI gives you a Warp-like context bar (repo, git status, working dir
 npm install -g @geekyshubham/olap
 ```
 
-Homebrew:
+Homebrew (alternative to the npm global install above — use one or the other):
 
 ```bash
 brew tap geekyshubham/olap

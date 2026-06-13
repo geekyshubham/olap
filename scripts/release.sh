@@ -30,6 +30,7 @@ npm test
 npm run lint
 npm run typecheck
 npm run pack:check
+npm run homebrew:check
 npm run smoke:cli
 
 echo "==> publish dry-run"

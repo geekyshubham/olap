@@ -47,8 +47,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run build && npm test && npm run lint && npm run pack:check",
+    "prepublishOnly": "npm run build && npm test && npm run lint && npm run pack:check && npm run homebrew:check",
     "pack:check": "bash scripts/pack-check.sh",
+    "homebrew:check": "bash scripts/homebrew-formula-check.sh",
     "smoke:cli": "bash scripts/smoke-cli.sh"
   },
   "dependencies": {

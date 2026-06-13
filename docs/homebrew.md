@@ -22,6 +22,9 @@ class Olap < Formula
 
   depends_on "node@22"
 
+  # npm global installs also place `bin/olap` in HOMEBREW_PREFIX.
+  link_overwrite "bin/olap"
+
   def install
     system Formula["node@22"].opt_bin/"npm", "install", *std_npm_args
     bin.install_symlink libexec/"bin/olap"
@@ -58,3 +61,4 @@ brew audit --strict olap
 - Keep Node pinned to a version compatible with Pi packages. OLAP currently requires Node 22 or newer.
 - The formula should install the compiled npm package, not TypeScript source.
 - Keep the npm package lean. `npm run pack:check` verifies that `src`, `test`, and `scripts` are excluded.
+- npm and Homebrew are alternative install methods. Both publish the same `olap` binary, so only one should own `HOMEBREW_PREFIX/bin/olap` at a time. `link_overwrite "bin/olap"` lets `brew install` and `brew upgrade` replace a stale npm global symlink automatically.
