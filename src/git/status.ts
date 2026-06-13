@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { basename } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 
 export interface RepoStatus {
   isRepo: boolean;
@@ -248,6 +249,49 @@ export async function getHeadOid(cwd = process.cwd(), timeoutMs = 4000): Promise
   return head?.trim() || undefined;
 }
 
+/** Paths OLAP writes for itself (run artifacts). These must never count as worker changes. */
+function isInternalArtifactPath(rawPath: string): boolean {
+  const path = rawPath.trim().replace(/^"|"$/g, "").replace(/^\.\//, "");
+  return path === ".olap" || path.startsWith(".olap/");
+}
+
+/** Drop OLAP's own artifact paths from a numstat/untracked text block, returning trimmed lines. */
+function withoutInternalArtifactLines(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const path = line.split("\t").pop() ?? line;
+      return !isInternalArtifactPath(path);
+    });
+}
+
+/** Cap for reading untracked files to count added lines (skip huge files). */
+const MAX_UNTRACKED_BYTES = 512 * 1024;
+
+/**
+ * `git diff --numstat` ignores untracked files, so new files would otherwise show as
+ * `+0 -0`. Read each untracked file and count its lines as added so a freshly created
+ * file reports real churn (binary/oversized files are flagged, not counted).
+ */
+async function untrackedFileChurn(cwd: string, path: string): Promise<DiffFile> {
+  try {
+    const info = await stat(join(cwd, path));
+    if (!info.isFile()) return { path, insertions: 0, deletions: 0, binary: false };
+    if (info.size > MAX_UNTRACKED_BYTES) return { path, insertions: 0, deletions: 0, binary: true };
+    const buffer = await readFile(join(cwd, path));
+    if (buffer.includes(0)) return { path, insertions: 0, deletions: 0, binary: true };
+    if (buffer.length === 0) return { path, insertions: 0, deletions: 0, binary: false };
+    const text = buffer.toString("utf8");
+    const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+    const insertions = body.length === 0 ? 0 : body.split("\n").length;
+    return { path, insertions, deletions: 0, binary: false };
+  } catch {
+    return { path, insertions: 0, deletions: 0, binary: false };
+  }
+}
+
 /**
  * Summarize changes since a run baseline: commits landed on `HEAD` since `baselineRef`
  * plus the current working-tree diff on top of `HEAD`.
@@ -275,7 +319,10 @@ export async function getRunDiffSummary(
       : [];
 
   const working = await getDiffSummary(cwd, timeoutMs);
-  return summarizeDiffFiles(mergeDiffFiles(committed, working.files));
+  const merged = mergeDiffFiles(committed, working.files).filter(
+    (file) => !isInternalArtifactPath(file.path),
+  );
+  return summarizeDiffFiles(merged);
 }
 
 export async function getDiffSummary(cwd = process.cwd(), timeoutMs = 4000): Promise<DiffSummary> {
@@ -288,17 +335,20 @@ export async function getDiffSummary(cwd = process.cwd(), timeoutMs = 4000): Pro
     git(["ls-files", "--others", "--exclude-standard"], cwd, timeoutMs),
   ]);
 
-  const untrackedFiles: DiffFile[] = (untracked ?? "")
+  const untrackedPaths = (untracked ?? "")
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
-    .map((path) => ({ path, insertions: 0, deletions: 0, binary: false }));
+    .filter((path) => !isInternalArtifactPath(path));
+  const untrackedFiles: DiffFile[] = await Promise.all(
+    untrackedPaths.map((path) => untrackedFileChurn(cwd, path)),
+  );
 
   const files = mergeDiffFiles(
     parseNumstat(unstaged ?? ""),
     parseNumstat(staged ?? ""),
     untrackedFiles,
-  );
+  ).filter((file) => !isInternalArtifactPath(file.path));
   return summarizeDiffFiles(files);
 }
 
@@ -320,13 +370,9 @@ export async function getWorktreeChangeSignature(
   ]);
 
   return JSON.stringify({
-    staged: (staged ?? "").trim(),
-    unstaged: (unstaged ?? "").trim(),
-    untracked: (untracked ?? "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .sort(),
+    staged: withoutInternalArtifactLines(staged).sort().join("\n"),
+    unstaged: withoutInternalArtifactLines(unstaged).sort().join("\n"),
+    untracked: withoutInternalArtifactLines(untracked).sort(),
   });
 }
 

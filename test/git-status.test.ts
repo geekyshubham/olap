@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   deriveRepoName,
@@ -172,5 +172,41 @@ describe("git diff summary", () => {
 
     expect(afterTracked).not.toBe(before);
     expect(afterUntracked).not.toBe(afterTracked);
+  });
+
+  it("counts real added lines for new untracked files (not +0 -0)", async () => {
+    const dir = await createTempDir("olap-untracked-");
+    await run("git", ["init", "-b", "main"], { cwd: dir });
+    await run("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    await run("git", ["config", "user.name", "Test"], { cwd: dir });
+    await writeFile(join(dir, "new.txt"), "a\nb\nc\n", "utf8");
+
+    const summary = await getDiffSummary(dir);
+    const file = summary.files.find((f) => f.path === "new.txt");
+    expect(file).toBeDefined();
+    expect(file?.insertions).toBe(3);
+    expect(summary.insertions).toBeGreaterThanOrEqual(3);
+  });
+
+  it("never counts OLAP's own .olap/ artifacts as changes", async () => {
+    const dir = await createTempDir("olap-selfignore-");
+    await run("git", ["init", "-b", "main"], { cwd: dir });
+    await run("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    await run("git", ["config", "user.name", "Test"], { cwd: dir });
+    await mkdir(join(dir, ".olap", "runs", "r1"), { recursive: true });
+    await writeFile(join(dir, ".olap", "runs", "r1", "events.jsonl"), "{}\n", "utf8");
+    await writeFile(join(dir, "real.txt"), "code\n", "utf8");
+
+    const summary = await getDiffSummary(dir);
+    const paths = summary.files.map((f) => f.path);
+    expect(paths).toContain("real.txt");
+    expect(paths.some((p) => p.startsWith(".olap"))).toBe(false);
+
+    // Adding only .olap artifacts must NOT change the worktree signature.
+    const sigBefore = await getWorktreeChangeSignature(dir);
+    await mkdir(join(dir, ".olap", "runs", "r2"), { recursive: true });
+    await writeFile(join(dir, ".olap", "runs", "r2", "events.jsonl"), "{}\n", "utf8");
+    const sigAfter = await getWorktreeChangeSignature(dir);
+    expect(sigAfter).toBe(sigBefore);
   });
 });

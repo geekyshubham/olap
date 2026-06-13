@@ -7,6 +7,7 @@ import type {
   TokenPrice,
   UsageSnapshot,
 } from "../types.js";
+import { resolveMarketPrice } from "./prices.js";
 
 type RoleMap = Record<RoleId, ResolvedRole>;
 
@@ -16,8 +17,9 @@ function roundUsd(value: number): number {
 
 function priceFor(config: OlapConfig, role: ResolvedRole): TokenPrice | undefined {
   const adapterPrices = config.cost.prices_per_million_tokens[role.adapter];
-  if (!adapterPrices) return undefined;
-  return adapterPrices[role.model] ?? adapterPrices["*"];
+  const configured = adapterPrices ? (adapterPrices[role.model] ?? adapterPrices["*"]) : undefined;
+  if (configured) return configured;
+  return resolveMarketPrice(role.adapter, role.model);
 }
 
 function roleCost(usage: RoleUsage, price: TokenPrice | undefined): number {

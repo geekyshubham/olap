@@ -900,15 +900,11 @@ async function runWorkerProcess(
   const stream = createAgentStream({
     onChunk: (chunk) => emit({ type: "agent", agentKind: chunk.kind, content: chunk.content }),
     onActivity: (activity) => {
+      // The FINAL turn outcome decides completion. A transient mid-run "Cancelled"
+      // (e.g. a single cancelled/errored tool call) must NOT fail the run if the
+      // worker recovers and ends with end_turn/completed. Last stop reason wins.
       if (activity.stopReason) {
-        const incoming = activity.stopReason;
-        if (!stopReason) {
-          stopReason = incoming;
-        } else if (isAbortedStopReason(incoming)) {
-          stopReason = incoming;
-        } else if (!isAbortedStopReason(stopReason)) {
-          stopReason = incoming;
-        }
+        stopReason = activity.stopReason;
       }
       if (activity.tool || activity.file) {
         emit({ type: "activity", activity: { tool: activity.tool, file: activity.file } });

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serializeConfig } from "../config/write.js";
 import type { DiffSummary } from "../git/status.js";
@@ -41,6 +41,15 @@ export async function writeRunArtifacts(options: {
 }): Promise<string> {
   const dir = runDir(options.cwd, options.runId);
   await mkdir(dir, { recursive: true });
+  // Keep OLAP's own run artifacts out of the user's git history and change detection.
+  const olapGitignore = join(options.cwd, ".olap", ".gitignore");
+  try {
+    await access(olapGitignore);
+  } catch {
+    await writeFile(olapGitignore, "# Created by OLAP. Run artifacts are not part of your project.\n*\n", "utf8").catch(
+      () => undefined,
+    );
+  }
 
   const writes: Promise<void>[] = [
     writeFile(join(dir, "task.md"), options.task.trim() + "\n", "utf8"),
