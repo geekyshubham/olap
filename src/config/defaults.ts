@@ -101,7 +101,9 @@ export const DEFAULT_CONFIG: OlapConfig = {
   },
   worker: {
     max_iterations: 3,
-    iteration_timeout_ms: 300_000,
+    // 0 disables the worker timeout: a worker (code-writing) run may legitimately take
+    // a long time, so completion is decided by the CLI's final stop reason, not a clock.
+    iteration_timeout_ms: 0,
     stop_on_first_pass: false,
     loop_policy: "auto",
   },

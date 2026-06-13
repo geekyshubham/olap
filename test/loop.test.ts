@@ -367,7 +367,7 @@ describe("runOrchestratedLoop", () => {
     expect(result.summary.iterations).toBe(1);
   });
 
-  it("fails when worker emits cancelled then end_turn with exit 0", async () => {
+  it("completes when the worker recovers from a transient cancel and ends with end_turn", async () => {
     const calls: AdapterCommand[] = [];
     const execute = async (command: AdapterCommand, options: ExecOptions): Promise<ExecResult> => {
       calls.push(command);
@@ -408,8 +408,8 @@ describe("runOrchestratedLoop", () => {
       getChangeSignature: changingSignature(),
       repoStatus: NO_REPO_STATUS,
     });
-    expect(result.summary.worker_cancelled).toBe(true);
-    expect(result.status).toBe("failed");
+    expect(result.summary.worker_cancelled).toBe(false);
+    expect(result.status).toBe("completed");
   });
 
   it("fails the run when the worker is cancelled even though it exits 0", async () => {
