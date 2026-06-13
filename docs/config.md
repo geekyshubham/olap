@@ -2,6 +2,16 @@
 
 OLAP reads `olap.config.yaml` from the working directory. Missing fields are merged with defaults, so older configs keep working — new sections simply fall back to their defaults.
 
+## Migration from dry-run
+
+OLAP always spawns live orchestrator and worker CLIs. The following keys and flags were removed:
+
+- `access.execution` — ignored with a warning if still present
+- `worker.dry_run` — removed; runs always execute when adapters are installed
+- CLI `--live` / `--dry-run` — removed
+
+Change detection and the post-run “must have file changes” gate require a git work tree. Direct/operational tasks (e.g. publish, deploy) skip the change gate.
+
 ```yaml
 version: 1
 adapters:
@@ -9,7 +19,7 @@ adapters:
   fallback: codex
   options:
     grok:
-      model: grok-code-fast-1
+      model: grok-composer-2.5-fast
       extra_args: []
     claude:
       model: sonnet
@@ -26,11 +36,11 @@ adapters:
 roles:
   orchestrator:
     adapter: grok
-    model: grok-4-latest
+    model: grok-composer-2.5-fast
     effort: default
   worker:
     adapter: grok
-    model: grok-code-fast-1
+    model: grok-composer-2.5-fast
     effort: default
 ui:
   theme: olap-dark
@@ -40,7 +50,6 @@ access:
   approval: on-failure
   sandbox: workspace-write
   network: false
-  execution: dry-run
 subagents:
   enabled: true
   max_parallel: 3
@@ -50,11 +59,12 @@ architect:
   review_schema_version: 1
   system_prompt_hint: Return compact structured reviews. Avoid prose unless blocked.
   require_valid_reviews: true
+  iteration_timeout_ms: 600000
 worker:
   max_iterations: 3
-  dry_run: true
   iteration_timeout_ms: 300000
   stop_on_first_pass: false
+  loop_policy: auto
 modules: []
 validators:
   - name: typecheck
@@ -89,7 +99,6 @@ Access settings are surfaced in the TUI and mapped into each adapter's real perm
 - `access.approval` — `untrusted` | `on-failure` | `on-request` | `never`.
 - `access.sandbox` — `read-only` | `workspace-write` | `danger-full-access`.
 - `access.network` — allow the worker network access (sandbox dependent).
-- `access.execution` — `dry-run` simulates the worker; `live` spawns the real worker CLI. Live is skipped in `plan` mode and when the worker adapter is not installed.
 
 ## Sub-agents
 
@@ -107,13 +116,14 @@ Access settings are surfaced in the TUI and mapped into each adapter's real perm
 - `review_schema_version` pins the expected structured review shape.
 - `system_prompt_hint` is a compact instruction sent to orchestrator phases.
 - `require_valid_reviews` controls whether review schema validity is required.
+- `iteration_timeout_ms` bounds orchestrator plan/review CLI invocations.
 
 ## Worker
 
 - `max_iterations` controls architect/worker loop depth.
-- `dry_run` keeps generated adapter commands non-executing (the effective execution mode is also gated by `access.execution`).
-- `iteration_timeout_ms` bounds a live worker process.
+- `iteration_timeout_ms` bounds a worker process.
 - `stop_on_first_pass` stops once the orchestrator emits a passing review.
+- `loop_policy` — `auto` (route from task keywords), `always` (review loop), or `never` (single worker pass).
 
 ## Modules
 
@@ -135,4 +145,6 @@ Supported `kind` values are `pi-package`, `extension`, `skill`, `prompt-template
 
 ## Validators
 
-Validators are shell commands run by `olap check`. They are intentionally external so each repo can keep its native quality gates.
+Validators are shell commands run by `olap check`. In `workflow` mode, OLAP also runs configured validators automatically after a successful worker loop and marks the run failed when any validator exits non-zero. They are intentionally external so each repo can keep its native quality gates.
+
+Each run writes artifacts under `.olap/runs/<run-id>/`, including `summary.json` (with `files_changed`, `worker_cancelled`, `validators_passed`, `cwd`, `executed`), `changes.json` (diff summary), reviews, events, and the context pack.

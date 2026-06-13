@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { generateContextPack, estimateTokens } from "../src/context/pack.js";
+import {
+  estimateTokens,
+  generateContextPack,
+  renderContextDigest,
+  renderContextExcerpt,
+} from "../src/context/pack.js";
 import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 import { createTempDir, writeFileInDir } from "./helpers.js";
+import type { ContextPack } from "../src/types.js";
+
+const pack: ContextPack = {
+  generated_at: "2026-06-12T00:00:00.000Z",
+  max_tokens: 32000,
+  total_tokens: 20,
+  truncated: false,
+  files: [
+    { path: "src/a.ts", tokens: 10, content: "export const a = 1; // MARKER_A" },
+    { path: "src/b.ts", tokens: 10, content: "export const b = 2; // MARKER_B" },
+  ],
+};
 
 describe("context pack", () => {
   it("estimates tokens from text length", () => {
@@ -47,5 +64,32 @@ describe("context pack", () => {
     expect(pack.total_tokens).toBeLessThanOrEqual(100);
     const content = await readFile(join(cwd, "big.txt"), "utf8");
     expect(content.length).toBeGreaterThan(pack.files[0].content.length);
+  });
+});
+
+describe("context rendering for prompts", () => {
+  it("renders a compact digest listing file paths and token sizes", () => {
+    const digest = renderContextDigest(pack);
+    expect(digest).toContain("src/a.ts");
+    expect(digest).toContain("src/b.ts");
+    expect(digest).toContain("tok");
+  });
+
+  it("renders real file CONTENTS (not just names) in the excerpt", () => {
+    const excerpt = renderContextExcerpt(pack, 32000);
+    expect(excerpt).toContain("MARKER_A");
+    expect(excerpt).toContain("MARKER_B");
+    expect(excerpt).toContain("src/a.ts");
+  });
+
+  it("truncates the excerpt to the token budget", () => {
+    const excerpt = renderContextExcerpt(pack, 2); // ~8 chars
+    expect(excerpt).toContain("truncated");
+    expect(excerpt.length).toBeLessThan(200);
+  });
+
+  it("handles an empty/undefined pack gracefully", () => {
+    expect(renderContextExcerpt(undefined, 1000)).toBe("");
+    expect(renderContextDigest(undefined)).toContain("no repository context");
   });
 });

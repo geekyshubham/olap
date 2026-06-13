@@ -4,7 +4,7 @@ adapters:
   fallback: codex
   options:
     grok:
-      model: grok-code-fast-1
+      model: grok-composer-2.5-fast
       extra_args: []
     claude:
       model: sonnet
@@ -20,13 +20,13 @@ adapters:
       extra_args: []
 roles:
   orchestrator:
-    adapter: kiro
-    model: claude-opus-4.8
-    effort: max
+    adapter: grok
+    model: grok-composer-2.5-fast
+    effort: default
   worker:
     adapter: grok
     model: grok-composer-2.5-fast
-    effort: max
+    effort: default
 ui:
   theme: mono
   mode: build
@@ -35,21 +35,21 @@ access:
   approval: on-failure
   sandbox: workspace-write
   network: false
-  execution: live
 subagents:
   enabled: true
-  max_parallel: 6
+  max_parallel: 3
 architect:
   output_budget_tokens: 4096
   context_pack_max_tokens: 32000
   review_schema_version: 1
   system_prompt_hint: Return compact structured reviews. Avoid prose unless blocked.
   require_valid_reviews: true
+  iteration_timeout_ms: 600000
 worker:
   max_iterations: 3
-  dry_run: true
   iteration_timeout_ms: 300000
   stop_on_first_pass: false
+  loop_policy: auto
 modules: []
 validators:
   - name: typecheck

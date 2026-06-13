@@ -25,5 +25,7 @@ describe("package metadata", () => {
     expect(packageJson.files).toEqual(expect.arrayContaining(["dist", "docs"]));
     expect(packageJson.engines.node).toContain(">=22");
     expect(packageJson.scripts).toHaveProperty("pack:check");
+    expect(packageJson.scripts).toHaveProperty("clean");
+    expect(packageJson.scripts.build).toContain("clean");
   });
 });

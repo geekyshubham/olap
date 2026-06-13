@@ -54,21 +54,19 @@ Discovered models are cached in-process and refreshed on startup, so the pickers
 2. Resolve `roles.orchestrator` and `roles.worker` to adapters + models.
 3. `adapters.preferred` / `adapters.fallback` remain for backward compatibility.
 
-If a role's adapter is missing, dry-run still builds and records its command so you can inspect it; live execution is skipped.
+If a role's adapter is missing, the run fails fast with a clear error. In `plan` mode the worker is skipped even when installed.
 
 ## Execution
 
-The run loop honors `access.execution`:
+OLAP always spawns the configured orchestrator and worker CLIs when their adapters are installed:
 
-- `dry-run` (default) — builds and records adapter commands without spawning them. No paid API calls.
-- `live` — spawns the worker adapter process, streams its stdout/stderr into the timeline, and records token usage parsed from JSON output. Live is skipped in `plan` mode and when the worker adapter is not installed.
-
-In both modes:
-
-- orchestrator phases emit compact structured reviews
+- orchestrator phases plan and emit compact structured reviews
 - worker phases receive the task, context pack, and access-mapped flags
+- stdout/stderr stream into the timeline and token usage is parsed from JSON output
 - all output is captured into `.olap/runs/<run-id>`
-- validators remain repo-defined commands
+- validators remain repo-defined commands (workflow mode)
+
+When the orchestrator review CLI exits successfully but does not print schema-valid review JSON, OLAP falls back to a signal-derived review (worker exit + diff). If `architect.require_valid_reviews` is true (default), the run fails instead of accepting the derived verdict.
 
 ## Adding an Adapter
 

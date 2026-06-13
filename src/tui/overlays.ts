@@ -9,9 +9,10 @@ const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro"];
 const MODES = ["plan", "build", "workflow"];
 const APPROVALS = ["untrusted", "on-failure", "on-request", "never"];
 const SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
-const EXECUTIONS = ["dry-run", "live"];
 const TOGGLE = ["off", "on"];
-const PARALLEL = ["1", "2", "3", "4", "5", "6"];
+const PARALLEL = ["1", "2", "3", "4", "5", "6", "8", "10", "12", "16"];
+const LOOP_POLICIES = ["auto", "always", "never"];
+const MAX_ITERATIONS = ["1", "2", "3", "4", "5", "6", "8", "10"];
 const EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
 
 export interface SettingsHooks {
@@ -156,11 +157,25 @@ export function buildSettingsList(
       values: TOGGLE,
     },
     {
-      id: "access.execution",
-      label: "Execution",
-      description: "dry-run simulates; live spawns the real worker CLI (uses your API key).",
-      value: config.access.execution,
-      values: EXECUTIONS,
+      id: "worker.loop_policy",
+      label: "Loop policy",
+      description: "auto = route from task · always = review loop · never = single worker pass.",
+      value: config.worker.loop_policy,
+      values: LOOP_POLICIES,
+    },
+    {
+      id: "worker.max_iterations",
+      label: "Max iterations",
+      description: "Architect/worker review loop depth (when not direct).",
+      value: String(config.worker.max_iterations),
+      values: MAX_ITERATIONS,
+    },
+    {
+      id: "worker.stop_on_first_pass",
+      label: "Stop on first pass",
+      description: "End the loop when the orchestrator review passes.",
+      value: config.worker.stop_on_first_pass ? "on" : "off",
+      values: TOGGLE,
     },
     {
       id: "subagents.enabled",
@@ -229,8 +244,14 @@ export function buildSettingsList(
       case "access.network":
         config.access.network = value === "on";
         break;
-      case "access.execution":
-        config.access.execution = value as OlapConfig["access"]["execution"];
+      case "worker.loop_policy":
+        config.worker.loop_policy = value as OlapConfig["worker"]["loop_policy"];
+        break;
+      case "worker.max_iterations":
+        config.worker.max_iterations = Number.parseInt(value, 10) || config.worker.max_iterations;
+        break;
+      case "worker.stop_on_first_pass":
+        config.worker.stop_on_first_pass = value === "on";
         break;
       case "subagents.enabled":
         config.subagents.enabled = value === "on";

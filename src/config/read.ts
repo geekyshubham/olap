@@ -34,19 +34,50 @@ function mergeRoles(partial: Partial<OlapConfig["roles"]> | undefined): OlapConf
   return roles;
 }
 
+/** Warnings for deprecated config keys stripped during merge. */
+export function collectLegacyConfigWarnings(partial: Partial<OlapConfig>): string[] {
+  const warnings: string[] = [];
+  const access = partial.access as Record<string, unknown> | undefined;
+  if (access && access.execution !== undefined) {
+    warnings.push(
+      "access.execution is ignored — OLAP always spawns live CLIs. Remove it from olap.config.yaml.",
+    );
+  }
+  const worker = partial.worker as Record<string, unknown> | undefined;
+  if (worker && worker.dry_run !== undefined) {
+    warnings.push(
+      "worker.dry_run is ignored — OLAP always spawns live CLIs. Remove it from olap.config.yaml.",
+    );
+  }
+  return warnings;
+}
+
+function stripLegacyConfig(partial: Partial<OlapConfig>): Partial<OlapConfig> {
+  const access = partial.access ? { ...partial.access } : undefined;
+  if (access) {
+    delete (access as Record<string, unknown>).execution;
+  }
+  const worker = partial.worker ? { ...partial.worker } : undefined;
+  if (worker) {
+    delete (worker as Record<string, unknown>).dry_run;
+  }
+  return { ...partial, access, worker };
+}
+
 export function mergeConfig(partial: Partial<OlapConfig>): OlapConfig {
+  const cleaned = stripLegacyConfig(partial);
   return {
     ...DEFAULT_CONFIG,
-    ...partial,
-    adapters: mergeAdapterOptions(partial.adapters),
-    roles: mergeRoles(partial.roles),
-    ui: { ...DEFAULT_CONFIG.ui, ...partial.ui },
-    access: { ...DEFAULT_CONFIG.access, ...partial.access },
-    subagents: { ...DEFAULT_CONFIG.subagents, ...partial.subagents },
-    architect: { ...DEFAULT_CONFIG.architect, ...partial.architect },
-    worker: { ...DEFAULT_CONFIG.worker, ...partial.worker },
-    modules: partial.modules ?? DEFAULT_CONFIG.modules,
-    validators: partial.validators ?? DEFAULT_CONFIG.validators,
+    ...cleaned,
+    adapters: mergeAdapterOptions(cleaned.adapters),
+    roles: mergeRoles(cleaned.roles),
+    ui: { ...DEFAULT_CONFIG.ui, ...cleaned.ui },
+    access: { ...DEFAULT_CONFIG.access, ...cleaned.access },
+    subagents: { ...DEFAULT_CONFIG.subagents, ...cleaned.subagents },
+    architect: { ...DEFAULT_CONFIG.architect, ...cleaned.architect },
+    worker: { ...DEFAULT_CONFIG.worker, ...cleaned.worker },
+    modules: cleaned.modules ?? DEFAULT_CONFIG.modules,
+    validators: cleaned.validators ?? DEFAULT_CONFIG.validators,
   };
 }
 
@@ -54,6 +85,9 @@ export function parseConfigText(text: string): OlapConfig {
   const parsed = parseYaml(text) as Partial<OlapConfig> | null;
   if (!parsed || typeof parsed !== "object") {
     return { ...DEFAULT_CONFIG };
+  }
+  for (const warning of collectLegacyConfigWarnings(parsed)) {
+    console.warn(`olap config: ${warning}`);
   }
   return mergeConfig(parsed);
 }

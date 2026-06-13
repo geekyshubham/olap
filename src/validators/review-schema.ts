@@ -72,36 +72,6 @@ export function validateArchitectReview(
   return { valid: errors.length === 0, errors };
 }
 
-export function createSimulatedReview(
-  iteration: number,
-  config: OlapConfig,
-  totalIterations: number,
-): ArchitectReview {
-  const isLast = iteration >= totalIterations;
-  const earlyPass = config.worker.stop_on_first_pass && iteration === 1;
-  const verdict: ArchitectVerdict = isLast || earlyPass ? "pass" : "revise";
-  const tokenBudgetUsed = Math.min(config.architect.output_budget_tokens, 256 + iteration * 64);
-
-  return {
-    schema_version: config.architect.review_schema_version,
-    iteration,
-    verdict,
-    summary: `Architect review ${iteration}: ${verdict} within output budget (${config.architect.output_budget_tokens} tokens).`,
-    findings: [
-      {
-        severity: isLast || earlyPass ? "info" : "warn",
-        message: isLast || earlyPass
-          ? "Acceptance criteria met for simulated run."
-          : "Additional worker iteration recommended.",
-      },
-    ],
-    next_actions: isLast || earlyPass
-      ? ["Finalize artifacts and mark session completed."]
-      : [`Run worker iteration ${iteration + 1}.`],
-    token_budget_used: tokenBudgetUsed,
-  };
-}
-
 export function allReviewsValid(reviews: ArchitectReview[], config: OlapConfig): boolean {
   if (!config.architect.require_valid_reviews) return true;
   return reviews.every(

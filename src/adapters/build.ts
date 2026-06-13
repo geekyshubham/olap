@@ -159,7 +159,6 @@ export function buildArchitectCommand(
           prompt,
         ],
         shell: "",
-        dry_run: true,
         phase: "architect",
       };
     case "claude":
@@ -178,7 +177,6 @@ export function buildArchitectCommand(
           prompt,
         ],
         shell: "",
-        dry_run: true,
         phase: "architect",
       };
     case "gemini":
@@ -197,7 +195,6 @@ export function buildArchitectCommand(
           prompt,
         ],
         shell: "",
-        dry_run: true,
         phase: "architect",
       };
     case "codex":
@@ -215,7 +212,6 @@ export function buildArchitectCommand(
           prompt,
         ],
         shell: "",
-        dry_run: true,
         phase: "architect",
       };
     case "kiro":
@@ -232,7 +228,6 @@ export function buildArchitectCommand(
           prompt,
         ],
         shell: "",
-        dry_run: true,
         phase: "architect",
       };
   }
@@ -267,7 +262,6 @@ export function buildWorkerCommand(
           task,
         ],
         shell: "",
-        dry_run: config.worker.dry_run,
         phase: "worker",
       };
     case "claude":
@@ -286,7 +280,6 @@ export function buildWorkerCommand(
           task,
         ],
         shell: "",
-        dry_run: config.worker.dry_run,
         phase: "worker",
       };
     case "gemini":
@@ -305,7 +298,6 @@ export function buildWorkerCommand(
           task,
         ],
         shell: "",
-        dry_run: config.worker.dry_run,
         phase: "worker",
       };
     case "codex":
@@ -326,7 +318,6 @@ export function buildWorkerCommand(
           task,
         ],
         shell: "",
-        dry_run: config.worker.dry_run,
         phase: "worker",
       };
     case "kiro":
@@ -343,7 +334,6 @@ export function buildWorkerCommand(
           task,
         ],
         shell: "",
-        dry_run: config.worker.dry_run,
         phase: "worker",
       };
   }
@@ -354,6 +344,43 @@ export function finalizeAdapterCommand(command: AdapterCommand): AdapterCommand 
     ...command,
     shell: command.argv.map(shellQuote).join(" "),
   };
+}
+
+/**
+ * Replace a command's prompt (always the final argv element across adapters)
+ * and re-quote the shell string, marking how/whether it executes. Used by the
+ * run loop so recorded commands reflect the exact prompt actually sent.
+ */
+export function withCommandPrompt(
+  command: AdapterCommand,
+  prompt: string,
+  meta: { step?: AdapterCommand["step"]; executed?: boolean } = {},
+): AdapterCommand {
+  const argv =
+    command.argv.length > 0 ? [...command.argv.slice(0, -1), prompt] : [command.binary, prompt];
+  return finalizeAdapterCommand({
+    ...command,
+    argv,
+    shell: "",
+    step: meta.step ?? command.step,
+    executed: meta.executed ?? command.executed,
+  });
+}
+
+/**
+ * Compact, display-friendly shell string: keeps the binary + flags but elides a
+ * long final prompt to `'<prompt: N chars>'` so the TUI doesn't render a wall of
+ * text. The full command (with the real prompt) is still recorded in artifacts.
+ */
+export function summarizeCommandShell(command: AdapterCommand, maxPromptChars = 80): string {
+  return command.argv
+    .map((arg, index) => {
+      if (index === command.argv.length - 1 && arg.length > maxPromptChars) {
+        return `'<prompt: ${arg.length} chars>'`;
+      }
+      return shellQuote(arg);
+    })
+    .join(" ");
 }
 
 /** Resolve a role to a concrete adapter + model + detection. */

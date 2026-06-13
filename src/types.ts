@@ -14,14 +14,11 @@ export type ApprovalPolicy = "untrusted" | "on-failure" | "on-request" | "never"
 /** Filesystem sandbox policy for worker execution (maps per-adapter). */
 export type SandboxPolicy = "read-only" | "workspace-write" | "danger-full-access";
 
-/** Whether the worker phase actually spawns processes or stays simulated. */
-export type ExecutionMode = "dry-run" | "live";
-
 /**
  * When to run the full orchestrator/worker review loop vs a single direct worker pass.
  * - auto: route from task keywords (/direct and /loop override)
  * - always: always run the review loop
- * - never: always run one worker pass (no simulated reviews)
+ * - never: always run one worker pass (no review loop)
  */
 export type LoopPolicy = "auto" | "always" | "never";
 
@@ -57,8 +54,6 @@ export interface AccessConfig {
   sandbox: SandboxPolicy;
   /** Allow workers network access (sandbox-dependent). */
   network: boolean;
-  /** dry-run keeps everything simulated; live spawns worker processes. */
-  execution: ExecutionMode;
 }
 
 export interface SubagentConfig {
@@ -107,10 +102,11 @@ export interface OlapConfig {
     review_schema_version: number;
     system_prompt_hint: string;
     require_valid_reviews: boolean;
+    /** Timeout for orchestrator plan/review CLI invocations. */
+    iteration_timeout_ms: number;
   };
   worker: {
     max_iterations: number;
-    dry_run: boolean;
     iteration_timeout_ms: number;
     stop_on_first_pass: boolean;
     /** How often to use the architect/worker review loop vs a single worker pass. */
@@ -131,8 +127,11 @@ export interface AdapterCommand {
   binary: string;
   argv: string[];
   shell: string;
-  dry_run: boolean;
   phase: "architect" | "worker";
+  /** What this invocation does within a phase. */
+  step?: "plan" | "implement" | "review";
+  /** True when this exact command was actually spawned (vs only planned). */
+  executed?: boolean;
 }
 
 /** Resolved adapter + model + detection for a role. */
@@ -234,5 +233,14 @@ export interface RunSummary {
   iterations: number;
   reviews_valid: number;
   context_pack_tokens: number;
-  dry_run: boolean;
+  /** Workspace the commands ran in. */
+  cwd?: string;
+  /** Whether real CLI processes were spawned. */
+  executed?: boolean;
+  /** Distinct files changed in the working tree after the run. */
+  files_changed?: number;
+  /** True if any worker turn was cancelled/aborted. */
+  worker_cancelled?: boolean;
+  /** Validator gate result (workflow mode): true=all passed, false=some failed, undefined=not run. */
+  validators_passed?: boolean;
 }

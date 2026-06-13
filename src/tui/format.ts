@@ -1,17 +1,5 @@
 import type { RoleUsage, RunEvent, RunPhase } from "../types.js";
 
-export interface MetricsSnapshot {
-  adapter: string;
-  contextUsed: number;
-  contextMax: number;
-  tokensIn: number;
-  tokensOut: number;
-  efficiency: number;
-  budgetUsed: number;
-  budgetMax: number;
-  contextPacked: boolean;
-}
-
 export function progressBar(used: number, max: number, width: number): string {
   const pct = max > 0 ? Math.min(1, used / max) : 0;
   const filled = Math.round(pct * width);
@@ -126,19 +114,6 @@ export function formatTimelineEvent(event: RunEvent, maxMessageWidth: number): s
 export function timelineMessageWidth(lineWidth: number): number {
   const reserved = "00:00:00 ARC plan     ↑1.0k ↓1.0k  ".length;
   return Math.max(8, lineWidth - reserved);
-}
-
-export function formatCompactMetrics(metrics: MetricsSnapshot): string {
-  const ctxPct = percentOf(metrics.contextUsed, metrics.contextMax);
-  const budgetPct = percentOf(metrics.budgetUsed, metrics.budgetMax);
-  const pack = metrics.contextPacked ? "packed" : "packing";
-  return [
-    `ctx ${progressBar(metrics.contextUsed, metrics.contextMax, 10)} ${ctxPct}%`,
-    `budget ${progressBar(metrics.budgetUsed, metrics.budgetMax, 10)} ${budgetPct}%`,
-    `in ${formatTokenCount(metrics.tokensIn)} out ${formatTokenCount(metrics.tokensOut)}`,
-    `eff ${metrics.efficiency.toFixed(2)}`,
-    pack,
-  ].join("  ");
 }
 
 export function budgetSeverity(pct: number): "ok" | "warn" | "critical" {

@@ -8,6 +8,8 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** True when the run was cancelled via AbortSignal (distinct from timeout). */
+  aborted: boolean;
   durationMs: number;
 }
 
@@ -48,6 +50,7 @@ export function executeCommand(
     let stdoutBuf = "";
     let stderrBuf = "";
     let timedOut = false;
+    let aborted = false;
     let settled = false;
 
     const child = spawn(bin, args, {
@@ -68,7 +71,7 @@ export function executeCommand(
     };
 
     const onAbort = () => {
-      timedOut = true;
+      aborted = true;
       child.kill("SIGTERM");
     };
 
@@ -98,17 +101,18 @@ export function executeCommand(
 
     child.on("error", (error) => {
       stderr += `${error.message}\n`;
-      finish({ ok: false, exitCode: null, signal: null, stdout, stderr, timedOut });
+      finish({ ok: false, exitCode: null, signal: null, stdout, stderr, timedOut, aborted });
     });
 
     child.on("close", (code, signal) => {
       finish({
-        ok: code === 0 && !timedOut,
+        ok: code === 0 && !timedOut && !aborted,
         exitCode: code,
         signal: signal ?? null,
         stdout,
         stderr,
         timedOut,
+        aborted,
       });
     });
   });

@@ -160,13 +160,17 @@ describe("TUI components", () => {
       workerModel: "grok:grok-code-fast-1",
       theme,
     });
-    panel.update({ contextUsed: 4000, contextMax: 32000, budgetUsed: 900, budgetMax: 4096 });
+    panel.update({ contextUsed: 4000, contextMax: 32000, contextTruncated: true });
     const lines = panel.render(100);
     assertWithinWidth(lines, 100);
     const joined = lines.join("\n");
     expect(joined).toContain("orchestrator");
     expect(joined).toContain("worker");
     expect(joined).toContain("sub-agents");
+    // Honest gauges: pack fill (real) + truncation flag + real token totals.
+    expect(joined).toContain("pack");
+    expect(joined).toContain("tokens");
+    expect(joined).toContain("truncated");
     panel.setVisible(false);
     expect(panel.render(100)).toEqual([]);
   });
@@ -175,14 +179,14 @@ describe("TUI components", () => {
     const footer = new FooterComponent({
       hints: ["Enter run", "/settings"],
       mode: "build",
-      access: { approval: "on-failure", sandbox: "workspace-write", network: false, execution: "dry-run" },
+      access: { approval: "on-failure", sandbox: "workspace-write", network: false },
       themeName: "olap-dark",
       theme,
     });
     const lines = footer.render(100);
     assertWithinWidth(lines, 100);
     expect(lines.join("\n")).toContain("build");
-    expect(lines.join("\n")).toContain("dry-run");
+    expect(lines.join("\n")).toContain("workspace-write");
   });
 
   it("renders routing, briefs, and parsed agent output", () => {
@@ -197,6 +201,36 @@ describe("TUI components", () => {
     expect(lines.join("\n")).toContain("wrk brief");
     expect(lines.join("\n")).toContain("npm publish");
     expect(lines.join("\n")).toContain("thought");
+  });
+
+  it("renders a diff summary, collapses thoughts, and shows tool status", () => {
+    const convo = new ConversationComponent(theme);
+    convo.addDiff({
+      changed: true,
+      files: [{ path: "src/x.ts", insertions: 3, deletions: 1, binary: false }],
+      insertions: 3,
+      deletions: 1,
+    });
+    convo.addAgent("thought", "a very long chain of reasoning that should be collapsed ".repeat(8));
+    convo.addAgent("tool", "bash({\"command\":\"npm test\"})");
+    const lines = convo.render(120);
+    assertWithinWidth(lines, 120);
+    const joined = lines.join("\n");
+    expect(joined).toContain("changes");
+    expect(joined).toContain("src/x.ts");
+    expect(joined).toContain("+3");
+    expect(joined).toContain("tool");
+    // A long thought collapses to exactly one dimmed line.
+    expect(lines.filter((l) => l.includes("thought"))).toHaveLength(1);
+  });
+
+  it("shows a live peek (last activity) and stall warning while running", () => {
+    const convo = new ConversationComponent(theme);
+    convo.setRunning(true, "Worker iteration 1/3");
+    convo.setActivity("edit src/tui/components.ts");
+    convo.setFrame(1);
+    const peek = convo.render(120).join("\n");
+    expect(peek).toContain("edit src/tui/components.ts");
   });
 
   it("renders help overlay and banner", () => {

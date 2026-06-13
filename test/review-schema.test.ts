@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
-import {
-  allReviewsValid,
-  createSimulatedReview,
-  validateArchitectReview,
-} from "../src/validators/review-schema.js";
+import { allReviewsValid, validateArchitectReview } from "../src/validators/review-schema.js";
 import { DEFAULT_CONFIG } from "../src/config/defaults.js";
+import type { ArchitectReview } from "../src/types.js";
+
+function sampleReview(iteration: number, verdict: ArchitectReview["verdict"]): ArchitectReview {
+  return {
+    schema_version: DEFAULT_CONFIG.architect.review_schema_version,
+    iteration,
+    verdict,
+    summary: `Review ${iteration}: ${verdict}`,
+    findings: [{ severity: "info", message: "ok" }],
+    next_actions: [],
+    token_budget_used: 120,
+  };
+}
 
 describe("architect review schema", () => {
   it("validates a well-formed review", () => {
-    const review = createSimulatedReview(1, DEFAULT_CONFIG, 3);
+    const review = sampleReview(1, "pass");
     const result = validateArchitectReview(
       review,
       DEFAULT_CONFIG.architect.review_schema_version,
@@ -23,8 +32,8 @@ describe("architect review schema", () => {
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
-  it("marks pass on final simulated iteration", () => {
-    const review = createSimulatedReview(3, DEFAULT_CONFIG, 3);
+  it("accepts a passing final-iteration review", () => {
+    const review = sampleReview(3, "pass");
     expect(review.verdict).toBe("pass");
     expect(allReviewsValid([review], DEFAULT_CONFIG)).toBe(true);
   });

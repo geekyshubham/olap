@@ -15,8 +15,8 @@ describe("model catalog", () => {
   });
 
   it("suggests role-appropriate defaults", () => {
-    expect(defaultModelFor("grok", "worker")).toBe("grok-code-fast-1");
-    expect(defaultModelFor("grok", "orchestrator")).toBe("grok-4-latest");
+    expect(defaultModelFor("grok", "worker")).toBe("grok-composer-2.5-fast");
+    expect(defaultModelFor("grok", "orchestrator")).toBe("grok-composer-2.5-fast");
   });
 
   it("finds models and orders by role suitability", () => {
@@ -28,9 +28,8 @@ describe("model catalog", () => {
   it("marks selected role models in the listing", () => {
     const listing = buildModelListing(DEFAULT_CONFIG);
     const grok = listing.find((l) => l.adapter === "grok");
-    const orchestrator = grok?.models.find((m) => m.id === "grok-4-latest");
-    const worker = grok?.models.find((m) => m.id === "grok-code-fast-1");
-    expect(orchestrator?.selectedFor).toContain("orchestrator");
-    expect(worker?.selectedFor).toContain("worker");
+    const selected = grok?.models.find((m) => m.id === "grok-composer-2.5-fast");
+    expect(selected?.selectedFor).toContain("orchestrator");
+    expect(selected?.selectedFor).toContain("worker");
   });
 });

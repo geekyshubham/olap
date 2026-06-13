@@ -23,14 +23,16 @@ export function printConfig(config: OlapConfig, cwd = process.cwd()): void {
   console.log(`  approval   ${config.access.approval}`);
   console.log(`  sandbox    ${config.access.sandbox}`);
   console.log(`  network    ${config.access.network}`);
-  console.log(`  execution  ${config.access.execution}`);
   console.log("");
   console.log("Sub-agents");
   console.log(`  enabled       ${config.subagents.enabled}`);
   console.log(`  max_parallel  ${config.subagents.max_parallel}`);
   console.log("");
   console.log("Loop");
-  console.log(`  max_iterations  ${config.worker.max_iterations}`);
-  console.log(`  context_max     ${config.architect.context_pack_max_tokens}`);
-  console.log(`  output_budget   ${config.architect.output_budget_tokens}`);
+  console.log(`  max_iterations           ${config.worker.max_iterations}`);
+  console.log(`  loop_policy              ${config.worker.loop_policy}`);
+  console.log(`  worker_timeout_ms        ${config.worker.iteration_timeout_ms}`);
+  console.log(`  orchestrator_timeout_ms  ${config.architect.iteration_timeout_ms}`);
+  console.log(`  context_max              ${config.architect.context_pack_max_tokens}`);
+  console.log(`  output_budget            ${config.architect.output_budget_tokens}`);
 }

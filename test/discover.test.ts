@@ -6,6 +6,7 @@ import {
   loadModels,
   parseGrokModels,
   parseKiroModels,
+  resolveConfigModels,
   resolveModelsForRole,
   setDiscoveredModels,
   toModelInfos,
@@ -75,6 +76,22 @@ describe("model discovery", () => {
     expect(resolveModelsForRole("grok", "worker").some((m) => m.id === "grok-code-fast-1")).toBe(true);
     setDiscoveredModels("grok", toModelInfos("grok", { models: ["grok-build"], default: "grok-build" }));
     expect(resolveModelsForRole("grok", "worker").map((m) => m.id)).toEqual(["grok-build"]);
+  });
+
+  it("resolveConfigModels falls back when configured model is unavailable", async () => {
+    const config = structuredClone(
+      (await import("../src/config/defaults.js")).DEFAULT_CONFIG,
+    );
+    config.roles.orchestrator.model = "grok-4-latest";
+    config.roles.worker.model = "grok-code-fast-1";
+    const { config: resolved, warnings } = await resolveConfigModels(
+      config,
+      [{ id: "grok", detected: true, binary: "/bin/grok" }],
+      { exec: async () => GROK_OUTPUT },
+    );
+    expect(resolved.roles.orchestrator.model).toBe("grok-composer-2.5-fast");
+    expect(resolved.roles.worker.model).toBe("grok-composer-2.5-fast");
+    expect(warnings.length).toBe(2);
   });
 
   it("loadModels discovers, caches, and returns the list", async () => {

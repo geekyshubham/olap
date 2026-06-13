@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serializeConfig } from "../config/write.js";
+import type { DiffSummary } from "../git/status.js";
 import type {
   AdapterCommand,
   ArchitectReview,
@@ -34,6 +35,7 @@ export async function writeRunArtifacts(options: {
   reviews?: ArchitectReview[];
   adapterCommands?: AdapterCommand[];
   summary?: RunSummary;
+  diff?: DiffSummary;
   session?: SessionRecord;
 }): Promise<string> {
   const dir = runDir(options.cwd, options.runId);
@@ -83,6 +85,12 @@ export async function writeRunArtifacts(options: {
   if (options.summary) {
     writes.push(
       writeFile(join(dir, "summary.json"), JSON.stringify(options.summary, null, 2) + "\n", "utf8"),
+    );
+  }
+
+  if (options.diff) {
+    writes.push(
+      writeFile(join(dir, "changes.json"), JSON.stringify(options.diff, null, 2) + "\n", "utf8"),
     );
   }
 

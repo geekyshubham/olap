@@ -6,8 +6,16 @@ import { join } from "node:path";
 import {
   deriveRepoName,
   EMPTY_REPO_STATUS,
+  formatDiffSummary,
   formatRepoStatus,
+  getDiffSummary,
+  getHeadOid,
   getRepoStatus,
+  getRunDiffSummary,
+  getWorktreeChangeSignature,
+  mergeDiffFiles,
+  normalizeDiffPath,
+  parseNumstat,
   parsePorcelainV2,
   type RepoStatus,
 } from "../src/git/status.js";
@@ -65,5 +73,104 @@ describe("git status parsing", () => {
     expect(status.branch).toBe("main");
     expect(status.untracked).toBeGreaterThanOrEqual(1);
     expect(status.dirty).toBe(true);
+  });
+});
+
+describe("git diff summary", () => {
+  it("normalizes brace-style and simple rename paths", () => {
+    expect(normalizeDiffPath("foo/{bar => baz}/file")).toBe("foo/baz/file");
+    expect(normalizeDiffPath("old-name.ts => new-name.ts")).toBe("new-name.ts");
+    expect(normalizeDiffPath("src/a.ts")).toBe("src/a.ts");
+  });
+
+  it("parses numstat into per-file churn (text + binary)", () => {
+    const files = parseNumstat(["12\t4\tsrc/a.ts", "-\t-\tassets/logo.png"].join("\n"));
+    expect(files).toHaveLength(2);
+    expect(files[0]).toEqual({ path: "src/a.ts", insertions: 12, deletions: 4, binary: false });
+    expect(files[1].binary).toBe(true);
+    expect(files[1].insertions).toBe(0);
+  });
+
+  it("merges staged + unstaged churn per path", () => {
+    const merged = mergeDiffFiles(
+      [{ path: "src/a.ts", insertions: 2, deletions: 1, binary: false }],
+      [{ path: "src/a.ts", insertions: 3, deletions: 0, binary: false }],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ path: "src/a.ts", insertions: 5, deletions: 1, binary: false });
+  });
+
+  it("formats a compact change summary", () => {
+    expect(formatDiffSummary({ changed: false, files: [], insertions: 0, deletions: 0 })).toBe("no changes");
+    expect(
+      formatDiffSummary({
+        changed: true,
+        files: [{ path: "a", insertions: 3, deletions: 1, binary: false }],
+        insertions: 3,
+        deletions: 1,
+      }),
+    ).toBe("1 file +3 -1");
+  });
+
+  it("summarizes a real repository's working-tree changes", async () => {
+    const dir = await createTempDir("olap-diff-");
+    await run("git", ["init", "-b", "main"], { cwd: dir });
+    await run("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    await run("git", ["config", "user.name", "Test"], { cwd: dir });
+    await writeFile(join(dir, "tracked.txt"), "one\n", "utf8");
+    await run("git", ["add", "."], { cwd: dir });
+    await run("git", ["commit", "-m", "init"], { cwd: dir });
+    await writeFile(join(dir, "tracked.txt"), "one\ntwo\n", "utf8");
+    await writeFile(join(dir, "new.txt"), "fresh\n", "utf8");
+
+    const summary = await getDiffSummary(dir);
+    expect(summary.changed).toBe(true);
+    const paths = summary.files.map((f) => f.path);
+    expect(paths).toContain("tracked.txt");
+    expect(paths).toContain("new.txt");
+  });
+
+  it("detects committed changes since a baseline ref", async () => {
+    const dir = await createTempDir("olap-rundiff-");
+    await run("git", ["init", "-b", "main"], { cwd: dir });
+    await run("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    await run("git", ["config", "user.name", "Test"], { cwd: dir });
+    await writeFile(join(dir, "tracked.txt"), "one\n", "utf8");
+    await run("git", ["add", "."], { cwd: dir });
+    await run("git", ["commit", "-m", "init"], { cwd: dir });
+    const baseline = await getHeadOid(dir);
+    expect(baseline).toBeTruthy();
+    await writeFile(join(dir, "tracked.txt"), "one\ntwo\n", "utf8");
+    await run("git", ["add", "."], { cwd: dir });
+    await run("git", ["commit", "-m", "second"], { cwd: dir });
+
+    const summary = await getRunDiffSummary(dir, baseline!);
+    expect(summary.changed).toBe(true);
+    expect(summary.files.some((f) => f.path === "tracked.txt")).toBe(true);
+  });
+
+  it("reports no changes for a non-repo directory", async () => {
+    const dir = await createTempDir("olap-nodiff-");
+    const summary = await getDiffSummary(dir);
+    expect(summary.changed).toBe(false);
+  });
+
+  it("changes the worktree signature when tracked or untracked changes change", async () => {
+    const dir = await createTempDir("olap-signature-");
+    await run("git", ["init", "-b", "main"], { cwd: dir });
+    await run("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    await run("git", ["config", "user.name", "Test"], { cwd: dir });
+    await writeFile(join(dir, "tracked.txt"), "one\n", "utf8");
+    await run("git", ["add", "."], { cwd: dir });
+    await run("git", ["commit", "-m", "init"], { cwd: dir });
+
+    const before = await getWorktreeChangeSignature(dir);
+    await writeFile(join(dir, "tracked.txt"), "one\ntwo\n", "utf8");
+    const afterTracked = await getWorktreeChangeSignature(dir);
+    await writeFile(join(dir, "new.txt"), "fresh\n", "utf8");
+    const afterUntracked = await getWorktreeChangeSignature(dir);
+
+    expect(afterTracked).not.toBe(before);
+    expect(afterUntracked).not.toBe(afterTracked);
   });
 });

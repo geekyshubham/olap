@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { AdapterDetection, AdapterId, RoleId } from "../types.js";
+import type { AdapterDetection, AdapterId, OlapConfig, RoleId } from "../types.js";
 import { findModel, modelsForRole, type ModelInfo } from "./models.js";
 
 export interface DiscoveredModels {
@@ -132,6 +132,58 @@ export function resolveModelsForRole(adapter: AdapterId, role: RoleId): ModelInf
   const discovered = cache.get(adapter);
   if (discovered && discovered.length > 0) return discovered;
   return modelsForRole(adapter, role);
+}
+
+/** Pick the best available model id for a role from a discovered list. */
+export function pickDiscoveredModel(
+  adapter: AdapterId,
+  role: RoleId,
+  discovered: DiscoveredModels,
+): string {
+  const available = new Set(discovered.models);
+  if (discovered.default && available.has(discovered.default)) {
+    return discovered.default;
+  }
+  for (const info of modelsForRole(adapter, role)) {
+    if (available.has(info.id)) return info.id;
+  }
+  return discovered.models[0] ?? "";
+}
+
+export interface ModelResolution {
+  config: OlapConfig;
+  warnings: string[];
+}
+
+/**
+ * Ensure each role's model exists on the installed adapter CLI.
+ * Falls back to the CLI default or the first catalog match when the configured id is missing.
+ */
+export async function resolveConfigModels(
+  config: OlapConfig,
+  detections: AdapterDetection[],
+  options: { timeoutMs?: number; exec?: ModelExec } = {},
+): Promise<ModelResolution> {
+  const out = structuredClone(config);
+  const warnings: string[] = [];
+  for (const role of ["orchestrator", "worker"] as RoleId[]) {
+    const adapter = out.roles[role].adapter;
+    const detection = detections.find((d) => d.id === adapter);
+    if (!detection?.detected || !detection.binary || !canDiscover(adapter)) continue;
+    const discovered = await discoverModels(adapter, detection.binary, options);
+    if (!discovered?.models.length) continue;
+    const configured = out.roles[role].model?.trim();
+    if (configured && discovered.models.includes(configured)) continue;
+    const fallback = pickDiscoveredModel(adapter, role, discovered);
+    if (!fallback) continue;
+    if (configured) {
+      warnings.push(
+        `roles.${role}.model "${configured}" is not available on ${adapter}; using "${fallback}".`,
+      );
+    }
+    out.roles[role].model = fallback;
+  }
+  return { config: out, warnings };
 }
 
 /** Discover + cache models for an adapter; returns the resolved list. */

@@ -9,13 +9,14 @@ import {
 } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { detectAdapters } from "../adapters/detect.js";
-import { canDiscover, loadModels } from "../adapters/discover.js";
+import { canDiscover, loadModels, resolveConfigModels } from "../adapters/discover.js";
 import { readConfig } from "../config/read.js";
 import { writeConfig } from "../config/write.js";
 import { generateContextPack } from "../context/pack.js";
 import { getRepoStatus } from "../git/status.js";
+import { formatDiffSummary } from "../git/status.js";
 import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
-import { runOrchestratedLoop, type LoopUpdate } from "../run/loop.js";
+import { runOrchestratedLoop, terminalSessionStatus, type LoopUpdate } from "../run/loop.js";
 import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
 import { checkForUpdate, formatUpdateNotice } from "../update-check.js";
 import { PACKAGE_NAME, VERSION } from "../version.js";
@@ -45,7 +46,7 @@ import {
 const MODES: WorkMode[] = ["plan", "build", "workflow"];
 
 export async function startTui(cwd = process.cwd()): Promise<void> {
-  const config = await readConfig(cwd);
+  let config = await readConfig(cwd);
   setTheme(config.ui.theme);
   let theme: Theme = getTheme();
 
@@ -73,7 +74,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     workerModel: formatModelBadge(config.roles.worker.adapter, config.roles.worker.model),
     theme,
   });
-  usage.update({ contextMax: config.architect.context_pack_max_tokens, budgetMax: config.architect.output_budget_tokens });
+  usage.update({ contextMax: config.architect.context_pack_max_tokens });
   const footer = new FooterComponent({
     hints: SHORTCUT_HINTS,
     mode: config.ui.mode,
@@ -345,10 +346,30 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
           conversation.addAgent(update.agentKind, update.content);
         }
         break;
+      case "activity":
+        if (update.activity) {
+          const { tool, file } = update.activity;
+          const label = file ? `${tool ?? "edit"} ${file}` : tool;
+          if (label) conversation.setActivity(label);
+        }
+        break;
+      case "diff":
+        if (update.diff) conversation.addDiff(update.diff);
+        break;
+      case "validator":
+        if (update.validators) {
+          for (const v of update.validators) {
+            conversation.addNote(
+              `validator ${v.name}: ${v.ok ? "pass" : `fail (exit ${v.exitCode})`}`,
+              v.ok ? "success" : "error",
+            );
+          }
+        }
+        break;
       case "subagent":
       case "usage":
         if (update.usage) {
-          usage.update({ usage: update.usage, budgetUsed: update.usage.orchestrator.tokens_out });
+          usage.update({ usage: update.usage });
         }
         break;
       case "error":
@@ -370,11 +391,20 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     abortController = new AbortController();
 
     try {
+      const resolved = await resolveConfigModels(config, detections);
+      if (resolved.warnings.length > 0) {
+        for (const warning of resolved.warnings) {
+          conversation.addNote(`Model fallback: ${warning}`, "warn");
+        }
+        config = resolved.config;
+        tui.requestRender();
+      }
+
       const contextPack = await generateContextPack(cwd, config);
       usage.update({
         contextUsed: contextPack.total_tokens,
         contextMax: config.architect.context_pack_max_tokens,
-        budgetMax: config.architect.output_budget_tokens,
+        contextTruncated: contextPack.truncated,
       });
 
       const result = await runOrchestratedLoop({
@@ -389,19 +419,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         onUpdate: handleUpdate,
       });
 
-      const session = await registerSession({
+      let session = await registerSession({
         cwd,
         task,
         adapter: result.roles.worker.adapter,
         runId,
         sessionId,
       });
-      const passed =
-        result.status === "completed" &&
-        (result.reviews.length === 0 || result.reviews.at(-1)?.verdict === "pass");
-      if (passed) {
-        await completeSession(cwd, sessionId, "completed");
-      }
+      session =
+        (await completeSession(cwd, sessionId, terminalSessionStatus(result))) ?? session;
       await writeRunArtifacts({
         cwd,
         runId,
@@ -413,12 +439,14 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         reviews: result.reviews,
         adapterCommands: result.adapterCommands,
         summary: result.summary,
+        diff: result.diff,
         session,
       });
 
       conversation.setRunning(false);
+      const changeNote = result.executed ? ` · ${formatDiffSummary(result.diff)}` : "";
       conversation.addNote(
-        `Run ${runId} ${result.status}${result.executed ? " · live" : " · dry-run"} · artifacts in .olap/runs/${runId}`,
+        `Run ${runId} ${result.status}${changeNote} · artifacts in .olap/runs/${runId}`,
         result.status === "completed" ? "success" : "error",
       );
 

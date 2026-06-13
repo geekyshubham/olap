@@ -1,13 +1,18 @@
 import { readConfig } from "../config/read.js";
 import { detectAdapters } from "../adapters/detect.js";
+import { resolveConfigModels } from "../adapters/discover.js";
 import { defaultModelFor } from "../adapters/models.js";
 import { generateContextPack } from "../context/pack.js";
+import { formatDiffSummary, type DiffSummary } from "../git/status.js";
 import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
-import { runOrchestratedLoop, type LoopUpdate } from "../run/loop.js";
+import {
+  runOrchestratedLoop,
+  terminalSessionStatus,
+  type LoopUpdate,
+} from "../run/loop.js";
 import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
 import type {
   AdapterId,
-  ExecutionMode,
   OlapConfig,
   ResolvedRole,
   RoleId,
@@ -24,7 +29,6 @@ export interface RunOptions {
   mode?: string;
   orchestrator?: string;
   worker?: string;
-  execution?: ExecutionMode;
   theme?: string;
   quiet?: boolean;
 }
@@ -38,6 +42,7 @@ export interface RunResult {
   roles: Record<RoleId, ResolvedRole>;
   usage: UsageSnapshot;
   iterations: number;
+  diff: DiffSummary;
 }
 
 /** Parse "adapter:model" or "adapter" into a role override. */
@@ -57,7 +62,6 @@ export function applyRunOverrides(config: OlapConfig, options: RunOptions): Olap
     config.ui.mode = options.mode as WorkMode;
   }
   if (options.theme) config.ui.theme = options.theme;
-  if (options.execution) config.access.execution = options.execution;
   if (options.orchestrator) {
     const parsed = parseRoleSpec(options.orchestrator, "orchestrator");
     if (parsed) config.roles.orchestrator = parsed;
@@ -90,6 +94,18 @@ function makePrinter(quiet: boolean): (update: LoopUpdate) => void {
       case "output":
         if (update.line) console.log(`    | ${update.line}`);
         break;
+      case "diff":
+        if (update.diff) {
+          console.log(`  changes: ${formatDiffSummary(update.diff)}`);
+        }
+        break;
+      case "validator":
+        if (update.validators) {
+          for (const v of update.validators) {
+            console.log(`  [validator] ${v.name}: ${v.ok ? "pass" : `fail (exit ${v.exitCode})`}`);
+          }
+        }
+        break;
       case "error":
         if (update.error) console.error(`  ! ${update.error}`);
         break;
@@ -99,8 +115,15 @@ function makePrinter(quiet: boolean): (update: LoopUpdate) => void {
 
 export async function runCommand(task: string, options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? process.cwd();
-  const config = applyRunOverrides(await readConfig(cwd), options);
   const detections = await detectAdapters();
+  let config = applyRunOverrides(await readConfig(cwd), options);
+  const resolved = await resolveConfigModels(config, detections);
+  config = resolved.config;
+  if (!options.quiet) {
+    for (const warning of resolved.warnings) {
+      console.warn(`olap run: ${warning}`);
+    }
+  }
 
   const runId = createRunId();
   const sessionId = options.sessionId ?? createSessionId();
@@ -109,7 +132,7 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
   if (!options.quiet) {
     console.log(
       `OLAP run ${runId} — orchestrator ${config.roles.orchestrator.adapter}:${config.roles.orchestrator.model}, ` +
-        `worker ${config.roles.worker.adapter}:${config.roles.worker.model}, mode ${config.ui.mode}, ${config.access.execution}`,
+        `worker ${config.roles.worker.adapter}:${config.roles.worker.model}, mode ${config.ui.mode}`,
     );
   }
 
@@ -125,16 +148,14 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
     onUpdate: makePrinter(options.quiet ?? false),
   });
 
-  const session = await registerSession({
+  let session = await registerSession({
     cwd,
     task,
     adapter: result.roles.worker.adapter,
     runId,
     sessionId,
   });
-  if (result.reviews.at(-1)?.verdict === "pass") {
-    await completeSession(cwd, sessionId, "completed");
-  }
+  session = (await completeSession(cwd, sessionId, terminalSessionStatus(result))) ?? session;
 
   const dir = await writeRunArtifacts({
     cwd,
@@ -147,6 +168,7 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
     reviews: result.reviews,
     adapterCommands: result.adapterCommands,
     summary: result.summary,
+    diff: result.diff,
     session,
   });
 
@@ -159,14 +181,18 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
     roles: result.roles,
     usage: result.usage,
     iterations: result.summary.iterations,
+    diff: result.diff,
   };
 }
 
 export function printRunResult(result: RunResult): void {
   console.log("");
-  console.log(`Run ${result.runId} ${result.status}${result.executed ? " (live)" : " (dry-run)"}`);
+  console.log(`Run ${result.runId} ${result.status}`);
   console.log(`Session: ${result.sessionId}`);
   console.log(`Artifacts: ${result.dir}`);
+  if (result.executed && result.iterations > 0) {
+    console.log(`Changes: ${formatDiffSummary(result.diff)}`);
+  }
   console.log(
     `Usage: orchestrator ${result.usage.orchestrator.calls} calls ↑${result.usage.orchestrator.tokens_in} ↓${result.usage.orchestrator.tokens_out} · ` +
       `worker ${result.usage.worker.calls} calls ↑${result.usage.worker.tokens_in} ↓${result.usage.worker.tokens_out} · ` +

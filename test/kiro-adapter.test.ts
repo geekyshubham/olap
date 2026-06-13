@@ -60,7 +60,6 @@ describe("kiro adapter", () => {
       approval: "on-failure",
       sandbox: "workspace-write",
       network: false,
-      execution: "dry-run",
     };
     expect(kiroTrustArgs(base, "architect")).toEqual(["--trust-tools=fs_read"]);
     expect(kiroTrustArgs(base, "worker")).toEqual(["--trust-tools=fs_read,fs_write"]);

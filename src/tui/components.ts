@@ -12,7 +12,8 @@ import type {
   WorkMode,
 } from "../types.js";
 import type { RepoStatus } from "../git/status.js";
-import { formatRepoStatus } from "../git/status.js";
+import { formatDiffSummary, formatRepoStatus } from "../git/status.js";
+import type { DiffSummary } from "../git/status.js";
 import {
   formatDuration,
   formatModelBadge,
@@ -247,10 +248,13 @@ export type ConversationEntry =
   | { kind: "command"; role: "orchestrator" | "worker"; command: string }
   | { kind: "agent"; agentKind: "text" | "thought" | "tool" | "status" | "error"; content: string }
   | { kind: "output"; stream: "stdout" | "stderr"; line: string }
+  | { kind: "diff"; summary: DiffSummary }
   | { kind: "review"; review: ArchitectReview };
 
 const MAX_ENTRIES = 500;
 const MAX_VISIBLE_LINES = 48;
+/** No worker sub-activity for this long while running ⇒ show a stall warning. */
+const STALL_THRESHOLD_MS = 12_000;
 
 /** Scrolling transcript of prompts, loop events, worker output, and reviews, with a live status row. */
 export class ConversationComponent implements Component {
@@ -260,6 +264,9 @@ export class ConversationComponent implements Component {
   private phaseLabel = "";
   private frame = 0;
   private startedAt = 0;
+  /** Last sub-activity label (e.g. "edit src/x.ts") for the live peek row. */
+  private activity = "";
+  private activityAt = 0;
 
   constructor(theme?: Theme) {
     this.theme = theme ?? getTheme();
@@ -309,23 +316,43 @@ export class ConversationComponent implements Component {
     content: string,
   ): void {
     this.push({ kind: "agent", agentKind, content });
+    // Any agent output counts as liveness for stall detection.
+    this.activityAt = Date.now();
+    if (agentKind === "tool") this.activity = content;
   }
 
   addReview(review: ArchitectReview): void {
     this.push({ kind: "review", review });
   }
 
+  addDiff(summary: DiffSummary): void {
+    this.push({ kind: "diff", summary });
+  }
+
+  /** Record the current sub-activity (tool/file) for the live peek row. */
+  setActivity(label: string): void {
+    this.activity = label;
+    this.activityAt = Date.now();
+  }
+
   clear(): void {
     this.entries = [];
     this.running = false;
     this.phaseLabel = "";
+    this.activity = "";
+    this.activityAt = 0;
   }
 
   setRunning(running: boolean, label = ""): void {
     this.running = running;
     this.phaseLabel = label;
     if (running && this.startedAt === 0) this.startedAt = Date.now();
-    if (!running) this.startedAt = 0;
+    if (running) this.activityAt = Date.now();
+    if (!running) {
+      this.startedAt = 0;
+      this.activity = "";
+      this.activityAt = 0;
+    }
   }
 
   setPhase(label: string): void {
@@ -394,26 +421,49 @@ export class ConversationComponent implements Component {
       case "command": {
         const roleStyle = entry.role === "orchestrator" ? t.orchestrator : t.worker;
         const tag = roleStyle(entry.role === "orchestrator" ? "◆ orch cmd" : "◇ wrk cmd");
-        const cmd = entry.command.length > width - 12
-          ? `${entry.command.slice(0, Math.max(0, width - 15))}...`
-          : entry.command;
-        return [truncateToWidth(`  ${tag} ${t.faint(cmd)}`, width)];
+        // The command is already compacted (long prompts elided) upstream, so we
+        // can wrap it fully instead of hiding the payload behind an ellipsis.
+        const body = wrap(entry.command, width, 4).map((line, i) =>
+          truncateToWidth(i === 0 ? `  ${tag} ${t.faint(line)}` : `    ${t.faint(line)}`, width),
+        );
+        return body.length > 0 ? body : [truncateToWidth(`  ${tag}`, width)];
       }
       case "agent": {
-        const prefix =
-          entry.agentKind === "thought"
-            ? t.faint("    thought ")
-            : entry.agentKind === "tool"
-              ? t.accent2("    tool ")
-              : entry.agentKind === "error"
-                ? t.error("    error ")
-                : entry.agentKind === "status"
-                  ? t.dim("    status ")
-                  : t.worker("    wrk ");
+        if (entry.agentKind === "thought") {
+          // Collapse reasoning to a single dimmed line so it doesn't dominate.
+          const oneLine = entry.content.replace(/\s+/g, " ").trim();
+          return [truncateToWidth(`    ${t.faint(`thought ${oneLine}`)}`, width)];
+        }
+        if (entry.agentKind === "tool") {
+          // Tool calls render as a status line: "● tool name(args)".
+          return [truncateToWidth(`    ${t.accent2("●")} ${t.accent2("tool")} ${t.text(entry.content)}`, width)];
+        }
+        if (entry.agentKind === "status") {
+          return [truncateToWidth(`    ${t.dim(`· ${entry.content}`)}`, width)];
+        }
+        if (entry.agentKind === "error") {
+          return wrap(entry.content, width, 6).map((line, i) =>
+            truncateToWidth(i === 0 ? `    ${t.error("✗")} ${t.error(line)}` : `      ${t.error(line)}`, width),
+          );
+        }
+        const prefix = t.worker("    wrk ");
         const body = wrap(entry.content, width, 8).map((line, i) =>
           truncateToWidth(i === 0 ? `${prefix}${t.text(line)}` : `          ${t.text(line)}`, width),
         );
         return body.length > 0 ? body : [truncateToWidth(prefix, width)];
+      }
+      case "diff": {
+        const d = entry.summary;
+        const head = `  ${t.accent("◈ changes")} ${d.changed ? t.success(formatDiffSummary(d)) : t.dim("no changes")}`;
+        const lines = [truncateToWidth(head, width)];
+        for (const file of d.files.slice(0, 8)) {
+          const stat = file.binary ? t.dim("binary") : `${t.success(`+${file.insertions}`)} ${t.error(`-${file.deletions}`)}`;
+          lines.push(truncateToWidth(`      ${t.dim(file.path)} ${stat}`, width));
+        }
+        if (d.files.length > 8) {
+          lines.push(truncateToWidth(`      ${t.dim(`… +${d.files.length - 8} more files`)}`, width));
+        }
+        return lines;
       }
       case "output": {
         const style = entry.stream === "stderr" ? t.warn : t.faint;
@@ -452,19 +502,27 @@ export class ConversationComponent implements Component {
       const spin = t.spinner(spinnerFrame(this.frame));
       const label = t.text(this.phaseLabel || "Working");
       const time = elapsed ? t.faint(`(${elapsed})`) : "";
-      out.push(truncateToWidth(`  ${spin} ${label} ${time}`, width));
+      const idleMs = this.activityAt > 0 ? Date.now() - this.activityAt : 0;
+      const stalled = idleMs > STALL_THRESHOLD_MS;
+      const peek = this.activity
+        ? stalled
+          ? t.warn(`⚠ idle ${formatDuration(idleMs)} · last: ${this.activity}`)
+          : t.faint(`· ${this.activity}`)
+        : stalled
+          ? t.warn(`⚠ idle ${formatDuration(idleMs)}`)
+          : "";
+      out.push(truncateToWidth(`  ${spin} ${label} ${time} ${peek}`.trimEnd(), width));
     }
     return out;
   }
 }
 
-/** Orchestrator vs worker usage, sub-agent count, and context/budget gauges. */
+/** Orchestrator vs worker usage, sub-agent count, a real context-pack gauge, and live token totals. */
 export class UsagePanelComponent implements Component {
   private usage: UsageSnapshot;
   private contextUsed = 0;
   private contextMax = 1;
-  private budgetUsed = 0;
-  private budgetMax = 1;
+  private contextTruncated = false;
   private orchestratorModel = "";
   private workerModel = "";
   private activeRole: "orchestrator" | "worker" | null = null;
@@ -518,14 +576,12 @@ export class UsagePanelComponent implements Component {
     usage?: UsageSnapshot;
     contextUsed?: number;
     contextMax?: number;
-    budgetUsed?: number;
-    budgetMax?: number;
+    contextTruncated?: boolean;
   }): void {
     if (patch.usage) this.usage = patch.usage;
     if (patch.contextUsed !== undefined) this.contextUsed = patch.contextUsed;
     if (patch.contextMax !== undefined) this.contextMax = patch.contextMax;
-    if (patch.budgetUsed !== undefined) this.budgetUsed = patch.budgetUsed;
-    if (patch.budgetMax !== undefined) this.budgetMax = patch.budgetMax;
+    if (patch.contextTruncated !== undefined) this.contextTruncated = patch.contextTruncated;
   }
 
   reset(): void {
@@ -536,7 +592,7 @@ export class UsagePanelComponent implements Component {
       subagents_active: 0,
     };
     this.contextUsed = 0;
-    this.budgetUsed = 0;
+    this.contextTruncated = false;
   }
 
   invalidate(): void {}
@@ -567,7 +623,12 @@ export class UsagePanelComponent implements Component {
     const orch = `${orchMark} ${t.orchestrator("orchestrator")} ${t.dim(orchModel)} ${t.faint(formatRoleUsage(this.usage.orchestrator))}${orchActive ? ` ${t.accent("working")}` : ""}`;
     const wrk = `${wrkMark} ${t.worker("worker")} ${t.dim(this.workerModel)} ${t.faint(formatRoleUsage(this.usage.worker))}${wrkActive ? ` ${t.accent("working")}` : ""}`;
     const sub = `${t.dim("sub-agents")} ${t.accent(String(this.usage.subagents_spawned))} ${t.faint(`(${this.usage.subagents_active} active)`)}`;
-    const gauges = `${this.gaugeText("ctx", this.contextUsed, this.contextMax, 8)}   ${this.gaugeText("budget", this.budgetUsed, this.budgetMax, 8)}`;
+    const totalIn = this.usage.orchestrator.tokens_in + this.usage.worker.tokens_in;
+    const totalOut = this.usage.orchestrator.tokens_out + this.usage.worker.tokens_out;
+    const pack = this.gaugeText("pack", this.contextUsed, this.contextMax, 8);
+    const trunc = this.contextTruncated ? ` ${t.warn("⚠ truncated")}` : "";
+    const tokens = `${t.dim("tokens")} ${t.tokens(`↑${formatTokenCount(totalIn)} ↓${formatTokenCount(totalOut)}`)}`;
+    const gauges = `${pack}${trunc}    ${tokens}`;
     return [
       truncateToWidth(` ${orch}`, width),
       truncateToWidth(` ${wrk}    ${sub}`, width),
@@ -613,11 +674,9 @@ export class FooterComponent implements Component {
   render(width: number): string[] {
     const t = this.theme;
     const left = t.shortcut(this.hints.join("  "));
-    const execStyle = this.access.execution === "live" ? t.error : t.dim;
     const right = [
       t.dim(this.mode),
       t.dim(this.access.sandbox),
-      execStyle(this.access.execution),
       t.faint(this.themeName),
     ].join(t.faint(" · "));
     return [padLine(joinLeftRight(` ${left}`, `${right} `, width), width)];

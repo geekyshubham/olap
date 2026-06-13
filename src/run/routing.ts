@@ -22,6 +22,43 @@ const LOOP_HINTS = [
   /\barchitect\b/i,
 ];
 
+/**
+ * Natural-language phrases where the user explicitly asks for a single pass / no
+ * review loop. These win over keyword scoring (and the `auto` policy) because they
+ * express intent for *this* task, e.g. "no need of loops just fix and verify it".
+ */
+const FORCE_DIRECT_HINTS = [
+  /\bno\s+need\s+(of|for)\s+(a\s+)?loops?\b/i,
+  /\bno\s+loops?\b/i,
+  /\bwithout\s+(a\s+|any\s+)?loops?\b/i,
+  /\bdo\s*n['’]?t\s+loop\b/i,
+  /\bdo\s+not\s+loop\b/i,
+  /\bsingle[-\s]?pass\b/i,
+  /\bone[-\s]?pass\b/i,
+  /\bone\s+shot\b/i,
+  /\bjust\s+fix\s+(it|this|the)\b/i,
+  /\bjust\s+fix\s+and\b/i,
+  /\bjust\s+do\s+it\b/i,
+  /\bno\s+(need\s+(of|for)\s+)?iterat(e|ing|ion|ions)\b/i,
+  /\bdo\s*n['’]?t\s+iterate\b/i,
+  /\bno\s+review\s+loop\b/i,
+  /\bskip\s+(the\s+)?review\b/i,
+];
+
+/** Natural-language phrases where the user explicitly asks to keep iterating. */
+const FORCE_LOOP_HINTS = [
+  /\bloop\s+until\b/i,
+  /\bkeep\s+iterating\b/i,
+  /\biterate\s+until\b/i,
+  /\brun\s+the\s+(review\s+)?loop\b/i,
+  /\buse\s+the\s+(review\s+)?loop\b/i,
+  /\bwith\s+(a\s+)?review\s+loop\b/i,
+];
+
+function matchesAny(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((re) => re.test(text));
+}
+
 /** User overrides via slash prefix or explicit flags in the task text. */
 export function parseTaskOverride(task: string): { task: string; force?: RunStrategy } {
   const trimmed = task.trim();
@@ -32,7 +69,15 @@ export function parseTaskOverride(task: string): { task: string; force?: RunStra
   return { task: trimmed };
 }
 
-/** Decide whether a task needs the full orchestrator/worker review loop. */
+/**
+ * Decide whether a task needs the full orchestrator/worker review loop.
+ *
+ * Precedence (strongest first):
+ *  1. Slash overrides (`/direct`, `/loop`).
+ *  2. Configured loop policy (`always` / `never`).
+ *  3. Natural-language intent for this task (auto policy only).
+ *  4. Keyword scoring (operational vs implementation), then prompt length.
+ */
 export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
   const { task: cleaned, force } = parseTaskOverride(task);
   if (force) {
@@ -42,6 +87,9 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
     };
   }
 
+  const text = cleaned.toLowerCase();
+
+  // 2. Configured policy (explicit always/never wins over NL hints).
   if (policy === "always") {
     return { strategy: "loop", reason: "loop policy: always" };
   }
@@ -49,7 +97,15 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
     return { strategy: "direct", reason: "loop policy: never" };
   }
 
-  const text = cleaned.toLowerCase();
+  // 3. Natural-language intent for this task (auto policy only).
+  if (matchesAny(text, FORCE_DIRECT_HINTS)) {
+    return { strategy: "direct", reason: "you asked for a single pass — no review loop" };
+  }
+  if (matchesAny(text, FORCE_LOOP_HINTS)) {
+    return { strategy: "loop", reason: "you asked to keep iterating — review loop on" };
+  }
+
+  // 4. Keyword scoring.
   const directScore = DIRECT_HINTS.reduce((n, re) => n + (re.test(text) ? 1 : 0), 0);
   const loopScore = LOOP_HINTS.reduce((n, re) => n + (re.test(text) ? 1 : 0), 0);
 

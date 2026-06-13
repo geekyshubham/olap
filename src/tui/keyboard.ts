@@ -58,7 +58,7 @@ export const HELP_LINES = [
   "  /models     Pick orchestrator + worker models",
   "  /mode       plan · build · workflow",
   "  /theme      Switch color theme",
-  "  /access     Approval, sandbox, network, execution",
+  "  /access     Approval, sandbox, network",
   "  /adapters   Detected CLIs (grok, claude, gemini, codex)",
   "  /usage      Toggle usage panel",
   "  /clear      Reset the conversation",

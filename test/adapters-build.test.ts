@@ -37,27 +37,27 @@ describe("adapter command builders", () => {
     expect(architect.argv).toContain("json");
     expect(architect.argv).toContain("-p");
     // orchestrator role model
-    expect(architect.argv).toContain("grok-4-latest");
+    expect(architect.argv).toContain("grok-composer-2.5-fast");
     // worker role model + default access (on-failure/workspace-write) -> acceptEdits
-    expect(worker.argv).toContain("grok-code-fast-1");
+    expect(worker.argv).toContain("grok-composer-2.5-fast");
     expect(worker.argv).toContain("acceptEdits");
     expect(worker.shell).toContain("/bin/grok");
   });
 
   it("maps access policy into per-adapter permission args", () => {
-    expect(permissionMode({ approval: "never", sandbox: "workspace-write", network: false, execution: "dry-run" })).toBe(
+    expect(permissionMode({ approval: "never", sandbox: "workspace-write", network: false })).toBe(
       "bypassPermissions",
     );
-    expect(permissionMode({ approval: "on-failure", sandbox: "read-only", network: false, execution: "dry-run" })).toBe(
+    expect(permissionMode({ approval: "on-failure", sandbox: "read-only", network: false })).toBe(
       "plan",
     );
-    expect(permissionMode({ approval: "untrusted", sandbox: "workspace-write", network: false, execution: "dry-run" })).toBe(
+    expect(permissionMode({ approval: "untrusted", sandbox: "workspace-write", network: false })).toBe(
       "default",
     );
-    expect(permissionMode({ approval: "on-failure", sandbox: "danger-full-access", network: false, execution: "dry-run" })).toBe(
+    expect(permissionMode({ approval: "on-failure", sandbox: "danger-full-access", network: false })).toBe(
       "bypassPermissions",
     );
-    expect(geminiApprovalMode({ approval: "never", sandbox: "workspace-write", network: false, execution: "dry-run" })).toBe(
+    expect(geminiApprovalMode({ approval: "never", sandbox: "workspace-write", network: false })).toBe(
       "yolo",
     );
     expect(codexSandbox(DEFAULT_CONFIG.access)).toBe("workspace-write");
@@ -81,7 +81,7 @@ describe("adapter command builders", () => {
       const cmd = finalizeAdapterCommand(buildWorkerCommand(adapter, "task", DEFAULT_CONFIG));
       expect(cmd.adapter).toBe(adapter);
       expect(cmd.shell.length).toBeGreaterThan(0);
-      expect(cmd.dry_run).toBe(true);
+      expect(cmd.executed).toBeUndefined();
     }
   });
 

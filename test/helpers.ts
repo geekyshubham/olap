@@ -12,6 +12,7 @@ export async function writeFakeBinary(
   name: string,
   body = '#!/bin/sh\necho "fake"\n',
 ): Promise<string> {
+  await mkdir(dir, { recursive: true });
   const path = join(dir, name);
   await writeFile(path, body, "utf8");
   await chmod(path, 0o755);

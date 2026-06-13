@@ -18,7 +18,6 @@ function command(binary: string, args: string[]): AdapterCommand {
     binary,
     argv: [binary, ...args],
     shell: "",
-    dry_run: false,
     phase: "worker",
   };
 }

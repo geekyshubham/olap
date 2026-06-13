@@ -22,8 +22,6 @@ interface RunCliOptions {
   orchestrator?: string;
   worker?: string;
   theme?: string;
-  live?: boolean;
-  dryRun?: boolean;
   quiet?: boolean;
 }
 
@@ -87,8 +85,6 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .option("--orchestrator <adapter[:model]>", "Override orchestrator role")
     .option("--worker <adapter[:model]>", "Override worker role")
     .option("--theme <name>", "Theme to record for this run")
-    .option("--live", "Spawn the real worker CLI (uses your API key)")
-    .option("--dry-run", "Force dry-run simulation (default)")
     .option("--quiet", "Suppress live event output")
     .action(async (task: string, options: RunCliOptions) => {
       const runOptions: RunOptions = {
@@ -97,7 +93,6 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
         worker: options.worker,
         theme: options.theme,
         quiet: options.quiet,
-        execution: options.live ? "live" : options.dryRun ? "dry-run" : undefined,
       };
       const result = await runCommand(task, runOptions);
       printRunResult(result);

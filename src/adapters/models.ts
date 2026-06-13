@@ -19,6 +19,18 @@ export interface ModelInfo {
 export const MODEL_CATALOG: Record<AdapterId, ModelInfo[]> = {
   grok: [
     {
+      id: "grok-composer-2.5-fast",
+      label: "Grok Composer 2.5 Fast",
+      description: "Default Grok CLI model; balanced planning and coding.",
+      goodFor: ["orchestrator", "worker"],
+    },
+    {
+      id: "grok-build",
+      label: "Grok Build",
+      description: "Coding-focused Grok CLI model.",
+      goodFor: ["worker"],
+    },
+    {
       id: "grok-4-latest",
       label: "Grok 4 (latest)",
       description: "Strong reasoning; best for planning and review.",
