@@ -230,6 +230,20 @@ export function buildArchitectCommand(
         shell: "",
         phase: "architect",
       };
+    case "ollama":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "run",
+          model ?? "qwen2.5-coder:7b",
+          ...opts.extra_args,
+          prompt,
+        ],
+        shell: "",
+        phase: "architect",
+      };
   }
 }
 
@@ -330,6 +344,20 @@ export function buildWorkerCommand(
           "--no-interactive",
           ...kiroTrustArgs(access, "worker"),
           ...modelAndEffortArgs(adapterId, model, effort),
+          ...opts.extra_args,
+          task,
+        ],
+        shell: "",
+        phase: "worker",
+      };
+    case "ollama":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "run",
+          model ?? "qwen2.5-coder:7b",
           ...opts.extra_args,
           task,
         ],

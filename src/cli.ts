@@ -9,12 +9,15 @@ import { checkCommand, printCheckResults } from "./commands/check.js";
 import { modulesCommand, printModules } from "./commands/modules.js";
 import { modelsCommand, printModels } from "./commands/models.js";
 import { configCommand, printConfig } from "./commands/config.js";
+import { printToolRunResult, runToolCommand, type ToolName } from "./commands/tools.js";
+import { readConfig } from "./config/read.js";
 import { startTui } from "./tui/app.js";
 import { PACKAGE_NAME, VERSION } from "./version.js";
 import { checkForUpdate, formatUpdateNotice } from "./update-check.js";
 
 export interface CliDependencies {
   startTui?: typeof startTui;
+  runToolCommand?: typeof runToolCommand;
 }
 
 interface RunCliOptions {
@@ -27,6 +30,7 @@ interface RunCliOptions {
 
 export function createCliProgram(deps: CliDependencies = {}): Command {
   const startTuiImpl = deps.startTui ?? startTui;
+  const runToolCommandImpl = deps.runToolCommand ?? runToolCommand;
   const program = new Command();
 
   program
@@ -47,10 +51,10 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
 
   program
     .command("adapters")
-    .description("Detect grok, claude, gemini, and codex adapters on PATH")
+    .description("Detect grok, claude, gemini, codex, kiro, and ollama adapters on PATH")
     .action(async () => {
       const detections = await adaptersCommand();
-      printAdapters(detections);
+      printAdapters(detections, await readConfig());
     });
 
   program
@@ -76,6 +80,30 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
       const modules = await modulesCommand();
       printModules(modules);
     });
+
+  const addToolCommand = (name: ToolName, description: string): void => {
+    program
+      .command(name)
+      .description(description)
+      .allowUnknownOption(true)
+      .argument("[args...]", `Arguments passed to ${name}`)
+      .action(async (args: string[] = []) => {
+        const result = await runToolCommandImpl(name, args, { cwd: process.cwd() });
+        printToolRunResult(result);
+        if (!result.ok) {
+          process.exitCode = result.exitCode ?? 1;
+        }
+      });
+  };
+
+  addToolCommand(
+    "graphify",
+    "Run Graphify for this project (defaults to `graphify .`)",
+  );
+  addToolCommand(
+    "headroom",
+    "Run Headroom helper commands (defaults to `headroom perf`)",
+  );
 
   program
     .command("run")

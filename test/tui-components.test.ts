@@ -111,7 +111,11 @@ describe("keyboard model", () => {
     expect(names).toContain("settings");
     expect(names).toContain("models");
     expect(names).toContain("mode");
+    expect(names).toContain("graphify");
+    expect(names).toContain("headroom");
     expect(HELP_LINES.some((line) => line.includes("/settings"))).toBe(true);
+    expect(HELP_LINES.some((line) => line.includes("/graphify"))).toBe(true);
+    expect(HELP_LINES.some((line) => line.includes("/headroom"))).toBe(true);
   });
 });
 
@@ -162,6 +166,19 @@ describe("TUI components", () => {
       theme,
     });
     panel.update({ contextUsed: 4000, contextMax: 32000, contextAvailable: 64000 });
+    panel.update({
+      cost: {
+        enabled: true,
+        currency: "USD",
+        orchestrator_usd: 0.004,
+        worker_usd: 0.002,
+        total_usd: 0.006,
+        single_model_baseline_usd: 0.024,
+        savings_usd: 0.018,
+        savings_percent: 75,
+        pricing_complete: true,
+      },
+    });
     const lines = panel.render(100);
     assertWithinWidth(lines, 100);
     const joined = lines.join("\n");
@@ -172,6 +189,8 @@ describe("TUI components", () => {
     // no perpetual "100% ⚠ truncated".
     expect(joined).toContain("context");
     expect(joined).toContain("tokens");
+    expect(joined).toContain("$0.0060");
+    expect(joined).toContain("saved 75%");
     // 4000 packed of 64000 discovered ≈ 6% coverage (not pinned at 100%).
     expect(joined).toContain("6%");
     expect(joined).not.toContain("truncated");
@@ -339,6 +358,7 @@ describe("run-plan overlay", () => {
       {
         task: "add the auth callback tests",
         strategy: "loop",
+        complexity: "complex",
         reason: "implementation task — full orchestrator/worker loop",
         mode: "build",
         maxIterations: 3,

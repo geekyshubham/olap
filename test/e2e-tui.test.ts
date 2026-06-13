@@ -32,6 +32,8 @@ describe("E2E TUI user flows", () => {
       "access",
       "adapters",
       "usage",
+      "graphify",
+      "headroom",
       "clear",
       "quit",
     ]) {

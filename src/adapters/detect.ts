@@ -8,6 +8,7 @@ export const ADAPTER_SPECS: AdapterSpec[] = [
   { id: "gemini", binaries: ["gemini", "gemini-cli"] },
   { id: "codex", binaries: ["codex", "codex-cli"] },
   { id: "kiro", binaries: ["kiro-cli", "kiro"] },
+  { id: "ollama", binaries: ["ollama"] },
 ];
 
 async function isExecutable(path: string): Promise<boolean> {
@@ -23,7 +24,8 @@ export async function findBinary(
   name: string,
   pathEnv = process.env.PATH ?? "",
 ): Promise<string | undefined> {
-  const dirs = pathEnv.split(":").filter(Boolean);
+  const sep = process.platform === "win32" ? ";" : ":";
+  const dirs = pathEnv.split(sep).filter(Boolean);
   for (const dir of dirs) {
     const candidate = join(dir, name);
     if (await isExecutable(candidate)) {

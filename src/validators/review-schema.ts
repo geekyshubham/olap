@@ -32,8 +32,13 @@ export function validateArchitectReview(
     errors.push(`schema_version must be ${expectedSchemaVersion}`);
   }
 
-  if (typeof value.iteration !== "number" || value.iteration < 1) {
-    errors.push("iteration must be a positive number");
+  if (
+    typeof value.iteration !== "number" ||
+    !Number.isFinite(value.iteration) ||
+    value.iteration < 1 ||
+    !Number.isInteger(value.iteration)
+  ) {
+    errors.push("iteration must be a positive integer");
   }
 
   if (typeof value.verdict !== "string" || !VALID_VERDICTS.has(value.verdict as ArchitectVerdict)) {
@@ -65,7 +70,11 @@ export function validateArchitectReview(
     errors.push("next_actions must be an array of strings");
   }
 
-  if (typeof value.token_budget_used !== "number" || value.token_budget_used < 0) {
+  if (
+    typeof value.token_budget_used !== "number" ||
+    !Number.isFinite(value.token_budget_used) ||
+    value.token_budget_used < 0
+  ) {
     errors.push("token_budget_used must be a non-negative number");
   }
 

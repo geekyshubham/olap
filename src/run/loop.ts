@@ -28,10 +28,12 @@ import { executeCommand, type ExecResult } from "./executor.js";
 import { extractPlanText, extractReview } from "./orchestrator.js";
 import { buildPlanPrompt, buildReviewPrompt, buildWorkerPrompt, type ContextBlock } from "./prompts.js";
 import { parseTaskOverride, routeTask } from "./routing.js";
+import { estimateUsageCost, formatCostSummary } from "./cost.js";
 import type {
   AdapterCommand,
   AdapterDetection,
   ArchitectReview,
+  CostSnapshot,
   ContextPack,
   OlapConfig,
   ResolvedRole,
@@ -73,6 +75,7 @@ export interface LoopUpdate {
   event?: RunEvent;
   review?: ArchitectReview;
   usage?: UsageSnapshot;
+  cost?: CostSnapshot;
   iteration?: number;
   totalIterations?: number;
   stream?: "stdout" | "stderr";
@@ -105,6 +108,7 @@ export interface OrchestratedResult {
   executed: boolean;
   diff: DiffSummary;
   validators: ValidatorResult[];
+  cost: CostSnapshot;
 }
 
 /** Whether a finished run should mark its session completed. */
@@ -274,7 +278,6 @@ export async function runOrchestratedLoop(
     events.push(event);
     emit({ type: "event", event });
   };
-  const pushUsage = () => emit({ type: "usage", usage: structuredClone(usage) });
 
   const route = routeTask(options.task, config.worker.loop_policy);
   const { task: cleanedTask } = parseTaskOverride(options.task);
@@ -287,6 +290,16 @@ export async function runOrchestratedLoop(
     task: cleanedTask,
     architectPrompt: `${config.architect.system_prompt_hint}\n\nTask:\n${cleanedTask}`,
   });
+  const currentCost = (): CostSnapshot => estimateUsageCost(config, usage, roles);
+  const pushUsage = () =>
+    emit({ type: "usage", usage: structuredClone(usage), cost: currentCost() });
+  const failIfBudgetExceeded = (): boolean => {
+    const cost = currentCost();
+    if (!cost.budget_exceeded) return false;
+    status = "failed";
+    emit({ type: "error", error: `Estimated cost budget exceeded (${formatCostSummary(cost)}).` });
+    return true;
+  };
   const architectBase = commands.find((c) => c.phase === "architect");
   const workerBase = commands.find((c) => c.phase === "worker");
 
@@ -322,7 +335,11 @@ export async function runOrchestratedLoop(
   let iterationsRun = 0;
   let status: "completed" | "failed" = "completed";
   let lastWorkerOk = true;
-  const maxIterations = direct ? 1 : config.worker.max_iterations;
+  const maxIterations = direct
+    ? 1
+    : route.complexity === "moderate"
+      ? Math.max(1, Math.min(2, config.worker.max_iterations))
+      : config.worker.max_iterations;
 
   // Phase: plan (orchestrator)
   emit({ type: "phase", phase: "plan", label: `Orchestrator planning (${roles.orchestrator.model})` });
@@ -379,6 +396,9 @@ export async function runOrchestratedLoop(
   emit({ type: "brief", role: "orchestrator", text: planText.trim() || "(no plan produced)" });
   const fullBrief = planText.trim();
   pushUsage();
+  if (status !== "failed") {
+    failIfBudgetExceeded();
+  }
   await delay(stepDelay);
 
   if (mode !== "plan" && status !== "failed") {
@@ -473,6 +493,7 @@ export async function runOrchestratedLoop(
         usage.subagents_active = Math.max(0, usage.subagents_active - 1);
       }
       pushUsage();
+      if (failIfBudgetExceeded()) break;
 
       if (direct) {
         status = lastWorkerOk ? "completed" : "failed";
@@ -520,6 +541,7 @@ export async function runOrchestratedLoop(
         message: review.summary,
       });
       pushUsage();
+      if (failIfBudgetExceeded()) break;
       await delay(stepDelay);
 
       if (review.verdict === "fail") {
@@ -616,6 +638,7 @@ export async function runOrchestratedLoop(
   const runId = options.runId ?? "loop-run";
   const sessionId = options.sessionId ?? "loop-session";
   const reviewsValid = allReviewsValid(reviews, config) ? reviews.length : 0;
+  const cost = currentCost();
   const summary: RunSummary = {
     run_id: runId,
     session_id: sessionId,
@@ -628,6 +651,7 @@ export async function runOrchestratedLoop(
     files_changed: diff.files.length,
     worker_cancelled: workerCancelled,
     validators_passed: validatorsPassed,
+    cost,
   };
 
   const report = buildReport({
@@ -642,6 +666,7 @@ export async function runOrchestratedLoop(
     status,
     diff,
     validators: validatorResults,
+    cost,
   });
 
   const result: OrchestratedResult = {
@@ -657,10 +682,11 @@ export async function runOrchestratedLoop(
     executed: didExecute,
     diff,
     validators: validatorResults,
+    cost,
   };
 
   emit({ type: "phase", phase: "done", label: donePhaseLabel(status, mode) });
-  emit({ type: "final", result, usage: structuredClone(usage) });
+  emit({ type: "final", result, usage: structuredClone(usage), cost });
   return result;
 }
 
@@ -854,8 +880,9 @@ function buildReport(input: {
   status: "completed" | "failed";
   diff: DiffSummary;
   validators: ValidatorResult[];
+  cost: CostSnapshot;
 }): string {
-  const { usage, roles, diff } = input;
+  const { usage, roles, diff, cost } = input;
   const changeLines =
     diff.files.length === 0
       ? ["- No working-tree changes detected."]
@@ -892,6 +919,7 @@ function buildReport(input: {
     `- Orchestrator: ${usage.orchestrator.calls} calls, in ${usage.orchestrator.tokens_in}, out ${usage.orchestrator.tokens_out}`,
     `- Worker: ${usage.worker.calls} calls, in ${usage.worker.tokens_in}, out ${usage.worker.tokens_out}`,
     `- Sub-agents spawned: ${usage.subagents_spawned}`,
+    `- Estimated cost: ${formatCostSummary(cost)}`,
     "",
     "## Changes",
     "",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { applyRunOverrides } from "../src/commands/run.js";
 import { DEFAULT_CONFIG } from "../src/config/defaults.js";
-import { collectLegacyConfigWarnings, mergeConfig, parseConfigText } from "../src/config/read.js";
+import { cloneConfig, collectLegacyConfigWarnings, mergeConfig, parseConfigText } from "../src/config/read.js";
 import { serializeConfig } from "../src/config/write.js";
 
 describe("config roles, ui, access, subagents", () => {
@@ -61,6 +62,17 @@ describe("config roles, ui, access, subagents", () => {
     expect((config.access as Record<string, unknown>).execution).toBeUndefined();
     expect((config.worker as Record<string, unknown>).dry_run).toBeUndefined();
     expect(config.worker.max_iterations).toBe(5);
+  });
+
+  it("preserves role effort when CLI overrides adapter:model", () => {
+    const config = cloneConfig();
+    config.roles.orchestrator.effort = "high";
+    const updated = applyRunOverrides(config, { orchestrator: "claude:opus" });
+    expect(updated.roles.orchestrator).toEqual({
+      adapter: "claude",
+      model: "opus",
+      effort: "high",
+    });
   });
 
   it("reads a legacy config without the new sections", () => {

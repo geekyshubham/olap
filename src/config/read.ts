@@ -9,6 +9,7 @@ function mergeAdapterOptions(
 ): OlapConfig["adapters"] {
   const base = DEFAULT_CONFIG.adapters;
   const options = { ...base.options };
+  const capabilities = { ...base.capabilities };
   if (partial?.options) {
     for (const id of Object.keys(partial.options) as AdapterId[]) {
       options[id] = {
@@ -18,10 +19,19 @@ function mergeAdapterOptions(
       };
     }
   }
+  if (partial?.capabilities) {
+    for (const id of Object.keys(partial.capabilities) as AdapterId[]) {
+      capabilities[id] = {
+        ...base.capabilities[id],
+        ...partial.capabilities[id],
+      } as OlapConfig["adapters"]["capabilities"][AdapterId];
+    }
+  }
   return {
     preferred: partial?.preferred ?? base.preferred,
     fallback: partial?.fallback ?? base.fallback,
     options,
+    capabilities,
   };
 }
 
@@ -32,6 +42,24 @@ function mergeRoles(partial: Partial<OlapConfig["roles"]> | undefined): OlapConf
     roles[role] = { ...base[role], ...partial?.[role] };
   }
   return roles;
+}
+
+function mergeCost(partial: Partial<OlapConfig["cost"]> | undefined): OlapConfig["cost"] {
+  const base = DEFAULT_CONFIG.cost;
+  const prices = structuredClone(base.prices_per_million_tokens);
+  if (partial?.prices_per_million_tokens) {
+    for (const id of Object.keys(partial.prices_per_million_tokens) as AdapterId[]) {
+      prices[id] = {
+        ...(prices[id] ?? {}),
+        ...partial.prices_per_million_tokens[id],
+      };
+    }
+  }
+  return {
+    ...base,
+    ...partial,
+    prices_per_million_tokens: prices,
+  };
 }
 
 /** Warnings for deprecated config keys stripped during merge. */
@@ -64,9 +92,14 @@ function stripLegacyConfig(partial: Partial<OlapConfig>): Partial<OlapConfig> {
   return { ...partial, access, worker };
 }
 
+/** Deep copy so callers can mutate config without aliasing DEFAULT_CONFIG. */
+export function cloneConfig(config: OlapConfig = DEFAULT_CONFIG): OlapConfig {
+  return structuredClone(config);
+}
+
 export function mergeConfig(partial: Partial<OlapConfig>): OlapConfig {
   const cleaned = stripLegacyConfig(partial);
-  return {
+  return cloneConfig({
     ...DEFAULT_CONFIG,
     ...cleaned,
     adapters: mergeAdapterOptions(cleaned.adapters),
@@ -76,15 +109,20 @@ export function mergeConfig(partial: Partial<OlapConfig>): OlapConfig {
     subagents: { ...DEFAULT_CONFIG.subagents, ...cleaned.subagents },
     architect: { ...DEFAULT_CONFIG.architect, ...cleaned.architect },
     worker: { ...DEFAULT_CONFIG.worker, ...cleaned.worker },
-    modules: cleaned.modules ?? DEFAULT_CONFIG.modules,
-    validators: cleaned.validators ?? DEFAULT_CONFIG.validators,
-  };
+    cost: mergeCost(cleaned.cost),
+    modules: cleaned.modules
+      ? structuredClone(cleaned.modules)
+      : structuredClone(DEFAULT_CONFIG.modules),
+    validators: cleaned.validators
+      ? structuredClone(cleaned.validators)
+      : structuredClone(DEFAULT_CONFIG.validators),
+  });
 }
 
 export function parseConfigText(text: string): OlapConfig {
   const parsed = parseYaml(text) as Partial<OlapConfig> | null;
   if (!parsed || typeof parsed !== "object") {
-    return { ...DEFAULT_CONFIG };
+    return cloneConfig();
   }
   for (const warning of collectLegacyConfigWarnings(parsed)) {
     console.warn(`olap config: ${warning}`);
@@ -99,7 +137,7 @@ export async function readConfig(cwd = process.cwd()): Promise<OlapConfig> {
     return parseConfigText(text);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { ...DEFAULT_CONFIG };
+      return cloneConfig();
     }
     throw error;
   }

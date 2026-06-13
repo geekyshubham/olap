@@ -66,6 +66,8 @@ export async function registerSession(options: {
     record.updated_at = now.toISOString();
     record.run_ids = [...record.run_ids, options.runId];
     record.adapter = options.adapter;
+    record.task_summary = taskSummary(options.task);
+    record.status = "active";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     record = {
@@ -121,9 +123,8 @@ export async function completeSession(
   await writeFile(sessionPath(cwd, sessionId), JSON.stringify(record, null, 2) + "\n", "utf8");
 
   const index = await readIndex(cwd);
-  await writeIndex(
-    cwd,
-    index.map((session) => (session.id === sessionId ? record : session)),
-  );
+  const updated = index.map((session) => (session.id === sessionId ? record : session));
+  updated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  await writeIndex(cwd, updated);
   return record;
 }

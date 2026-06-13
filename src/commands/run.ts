@@ -10,17 +10,19 @@ import {
   terminalSessionStatus,
   type LoopUpdate,
 } from "../run/loop.js";
+import { formatCostSummary } from "../run/cost.js";
 import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
 import type {
   AdapterId,
   OlapConfig,
   ResolvedRole,
   RoleId,
+  CostSnapshot,
   UsageSnapshot,
   WorkMode,
 } from "../types.js";
 
-const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro"];
+const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro", "ollama"];
 const MODES: WorkMode[] = ["plan", "build", "workflow"];
 
 export interface RunOptions {
@@ -41,6 +43,7 @@ export interface RunResult {
   executed: boolean;
   roles: Record<RoleId, ResolvedRole>;
   usage: UsageSnapshot;
+  cost: CostSnapshot;
   iterations: number;
   diff: DiffSummary;
 }
@@ -64,11 +67,11 @@ export function applyRunOverrides(config: OlapConfig, options: RunOptions): Olap
   if (options.theme) config.ui.theme = options.theme;
   if (options.orchestrator) {
     const parsed = parseRoleSpec(options.orchestrator, "orchestrator");
-    if (parsed) config.roles.orchestrator = parsed;
+    if (parsed) config.roles.orchestrator = { ...config.roles.orchestrator, ...parsed };
   }
   if (options.worker) {
     const parsed = parseRoleSpec(options.worker, "worker");
-    if (parsed) config.roles.worker = parsed;
+    if (parsed) config.roles.worker = { ...config.roles.worker, ...parsed };
   }
   return config;
 }
@@ -181,6 +184,7 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
     executed: result.executed,
     roles: result.roles,
     usage: result.usage,
+    cost: result.cost,
     iterations: result.summary.iterations,
     diff: result.diff,
   };
@@ -199,4 +203,5 @@ export function printRunResult(result: RunResult): void {
       `worker ${result.usage.worker.calls} calls ↑${result.usage.worker.tokens_in} ↓${result.usage.worker.tokens_out} · ` +
       `sub-agents ${result.usage.subagents_spawned}`,
   );
+  console.log(`Cost: ${formatCostSummary(result.cost)}`);
 }

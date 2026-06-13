@@ -124,6 +124,20 @@ export const MODEL_CATALOG: Record<AdapterId, ModelInfo[]> = {
   // Kiro manages its own model list (selected via `kiro-cli settings` or `--model`).
   // Left empty so OLAP defers to Kiro's configured default unless you pick one.
   kiro: [],
+  ollama: [
+    {
+      id: "qwen2.5-coder:7b",
+      label: "Qwen2.5 Coder 7B",
+      description: "Local Ollama coding model; useful for plan/review text workflows.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "llama3.1:8b",
+      label: "Llama 3.1 8B",
+      description: "Local general-purpose model through Ollama.",
+      goodFor: ["orchestrator"],
+    },
+  ],
 };
 
 export function modelsForAdapter(adapter: AdapterId): ModelInfo[] {

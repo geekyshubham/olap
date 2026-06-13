@@ -56,5 +56,6 @@ export async function runValidators(
 }
 
 export function allValidatorsPassed(results: ValidatorResult[]): boolean {
-  return results.length > 0 && results.every((r) => r.ok);
+  if (results.length === 0) return true;
+  return results.every((r) => r.ok);
 }

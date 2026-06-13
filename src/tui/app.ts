@@ -18,6 +18,12 @@ import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
 import { runOrchestratedLoop, terminalSessionStatus, type LoopUpdate } from "../run/loop.js";
 import { buildRunPlan } from "../run/routing.js";
 import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
+import {
+  buildToolInvocation,
+  formatToolCommand,
+  runToolCommand,
+  type ToolName,
+} from "../commands/tools.js";
 import { checkForUpdate, formatUpdateNotice } from "../update-check.js";
 import { PACKAGE_NAME, VERSION } from "../version.js";
 import type { RoleId, WorkMode } from "../types.js";
@@ -45,6 +51,19 @@ import {
 } from "./theme.js";
 
 const MODES: WorkMode[] = ["plan", "build", "workflow"];
+
+function splitToolArgs(input: string): string[] {
+  const matches = input.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  return matches.map((arg) => {
+    if (
+      (arg.startsWith('"') && arg.endsWith('"')) ||
+      (arg.startsWith("'") && arg.endsWith("'"))
+    ) {
+      return arg.slice(1, -1);
+    }
+    return arg;
+  });
+}
 
 export async function startTui(cwd = process.cwd()): Promise<void> {
   let config = await readConfig(cwd);
@@ -76,8 +95,14 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     theme,
   });
   usage.update({ contextMax: config.architect.context_pack_max_tokens });
-  const reservedRows = (): number =>
-    (config.ui.banner ? 9 : 0) + 1 + 3 + 2 + 1 + 1;
+  const reservedRows = (): number => {
+    const bannerRows = config.ui.banner ? 9 : 0;
+    const contextBarRows = 1;
+    const usageRows = usage.chromeRowCount();
+    const editorRows = 2;
+    const footerRows = 1;
+    return bannerRows + contextBarRows + usageRows + editorRows + footerRows;
+  };
   conversation.setReservedRows(reservedRows());
   const footer = new FooterComponent({
     hints: SHORTCUT_HINTS,
@@ -254,9 +279,64 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   };
 
   const doClear = (): void => {
+    if (abortController || conversation.isRunning()) {
+      conversation.addNote("Cannot clear while a run is active", "warn");
+      tui.requestRender();
+      return;
+    }
     conversation.clear();
     usage.reset();
     tui.requestRender();
+  };
+
+  const runToolFromTui = async (tool: ToolName, rawArg: string): Promise<void> => {
+    const args = splitToolArgs(rawArg);
+    const invocation = buildToolInvocation(tool, args);
+    editor.disableSubmit = true;
+    cancelledByUser = false;
+    footer.setHints(SHORTCUT_HINTS_RUNNING);
+    conversation.addUser(`/${tool}${rawArg ? ` ${rawArg}` : ""}`);
+    conversation.setRunning(true, `Running ${formatToolCommand(invocation)}`);
+    startSpinner();
+    abortController = new AbortController();
+    tui.requestRender();
+
+    try {
+      const result = await runToolCommand(tool, args, {
+        cwd,
+        signal: abortController.signal,
+        onLine: (stream, line) => {
+          conversation.addOutput(stream, line);
+          tui.requestRender();
+        },
+      });
+      conversation.setRunning(false);
+      if (cancelledByUser) {
+        conversation.addNote(`${tool} cancelled`, "warn");
+      } else if (result.ok) {
+        conversation.addNote(`${tool} completed: ${result.command}`, "success");
+      } else {
+        conversation.addNote(
+          `${tool} failed${result.exitCode === null ? "" : ` (exit ${result.exitCode})`}`,
+          "error",
+        );
+        if (result.missingBinary) {
+          conversation.addNote(result.installHint, "warn");
+        }
+      }
+    } catch (error) {
+      conversation.setRunning(false);
+      conversation.addNote(
+        `${tool} failed: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    } finally {
+      footer.setHints(SHORTCUT_HINTS);
+      stopSpinner();
+      editor.disableSubmit = false;
+      abortController = undefined;
+      tui.requestRender();
+    }
   };
 
   // ---- commands ----
@@ -317,8 +397,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       }
       case "usage":
         usage.setVisible(!usage.isVisible());
+        conversation.setReservedRows(reservedRows());
         conversation.addNote(`Usage panel ${usage.isVisible() ? "shown" : "hidden"}`, "dim");
         break;
+      case "graphify":
+        void runToolFromTui("graphify", arg);
+        return;
+      case "headroom":
+        void runToolFromTui("headroom", arg);
+        return;
       case "clear":
         doClear();
         return;
@@ -389,7 +476,8 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       case "subagent":
       case "usage":
         if (update.usage) {
-          usage.update({ usage: update.usage });
+          usage.update({ usage: update.usage, cost: update.cost });
+          conversation.setReservedRows(reservedRows());
         }
         break;
       case "error":

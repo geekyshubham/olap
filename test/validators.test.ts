@@ -26,6 +26,7 @@ describe("validators", () => {
       expect(results[1].stderr).toContain("nope");
       expect(allValidatorsPassed(results)).toBe(false);
       expect(allValidatorsPassed([results[0]])).toBe(true);
+      expect(allValidatorsPassed([])).toBe(true);
     } finally {
       process.env.PATH = previousPath;
     }

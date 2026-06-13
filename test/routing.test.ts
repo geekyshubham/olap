@@ -11,6 +11,13 @@ describe("routeTask", () => {
   it("routes implementation tasks to the full loop", () => {
     const decision = routeTask("implement the auth callback tests", "auto");
     expect(decision.strategy).toBe("loop");
+    expect(decision.complexity).toBe("complex");
+  });
+
+  it("routes trivial mechanical tasks directly", () => {
+    const decision = routeTask("fix a typo in README", "auto");
+    expect(decision.strategy).toBe("direct");
+    expect(decision.complexity).toBe("trivial");
   });
 
   it("honors /loop and /direct overrides", () => {
@@ -72,6 +79,7 @@ describe("buildRunPlan", () => {
   it("previews a full loop for implementation tasks and matches routeTask", () => {
     const plan = buildRunPlan("implement the auth callback tests", config);
     expect(plan.strategy).toBe("loop");
+    expect(plan.complexity).toBe("complex");
     expect(plan.reason).toBe(routeTask("implement the auth callback tests", config.worker.loop_policy).reason);
     expect(plan.maxIterations).toBe(config.worker.max_iterations);
     expect(plan.mode).toBe(config.ui.mode);
@@ -92,5 +100,12 @@ describe("buildRunPlan", () => {
   it("honors the /loop override even for operational text", () => {
     const plan = buildRunPlan("/loop publish now", config);
     expect(plan.strategy).toBe("loop");
+  });
+
+  it("caps moderate tasks at two review iterations", () => {
+    const plan = buildRunPlan("add a compact settings row", config);
+    expect(plan.strategy).toBe("loop");
+    expect(plan.complexity).toBe("moderate");
+    expect(plan.maxIterations).toBe(2);
   });
 });

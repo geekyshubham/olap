@@ -229,6 +229,32 @@ describe("runOrchestratedLoop", () => {
     expect(updates.some((u) => u.type === "agent")).toBe(true);
   });
 
+  it("fails a run when the estimated cost budget is exceeded", async () => {
+    const { execute } = recordingExecutor();
+    const updates: LoopUpdate[] = [];
+    const result = await runOrchestratedLoop({
+      task: "implement the feature",
+      config: cfg((c) => {
+        c.ui.mode = "build";
+        c.worker.max_iterations = 1;
+        c.worker.loop_policy = "always";
+        c.cost.session_budget_usd = 0.000001;
+      }),
+      cwd: process.cwd(),
+      detections: GROK_DETECTED,
+      delay: NO_DELAY,
+      execute,
+      getRunDiff: async () => SOME_DIFF,
+      getChangeSignature: changingSignature(),
+      repoStatus: NO_REPO_STATUS,
+      onUpdate: (u) => updates.push(u),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.cost.budget_exceeded).toBe(true);
+    expect(updates.some((u) => u.error?.includes("cost budget exceeded"))).toBe(true);
+  });
+
   it("injects real repository file CONTENTS into worker + orchestrator prompts", async () => {
     const { calls, execute } = recordingExecutor();
     const MARKER = "UNIQUE_CONTEXT_MARKER_42";

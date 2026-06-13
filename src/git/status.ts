@@ -106,6 +106,7 @@ export function parsePorcelainV2(output: string): {
       if (y && y !== ".") unstaged += 1;
     } else if (line.startsWith("u ")) {
       // Unmerged entry counts as both staged and unstaged churn.
+      staged += 1;
       unstaged += 1;
     } else if (line.startsWith("? ")) {
       untracked += 1;

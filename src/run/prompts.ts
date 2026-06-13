@@ -112,6 +112,8 @@ export function buildReviewPrompt(input: {
     input.config.architect.system_prompt_hint,
     "",
     "You are the ORCHESTRATOR reviewing the worker's latest result for this task.",
+    "Review scope: diff-only. Judge the worker by the changed file list, diff summary,",
+    "worker output, and acceptance criteria; do not request or rely on the full repository context.",
     "Decide: pass (acceptance met), revise (needs another iteration), or fail (blocked).",
     "Respond with ONLY a single JSON object, no prose, matching this shape:",
     JSON.stringify(schema, null, 2),

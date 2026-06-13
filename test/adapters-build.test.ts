@@ -85,6 +85,23 @@ describe("adapter command builders", () => {
     }
   });
 
+  it("builds ollama local text commands", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.roles.orchestrator = { adapter: "ollama", model: "qwen2.5-coder:7b" };
+    config.roles.worker = { adapter: "ollama", model: "qwen2.5-coder:7b" };
+    const detection = { id: "ollama" as const, detected: true, binary: "/bin/ollama" };
+
+    const architect = finalizeAdapterCommand(
+      buildArchitectCommand("ollama", "plan this", config, detection),
+    );
+    const worker = finalizeAdapterCommand(
+      buildWorkerCommand("ollama", "write this", config, detection),
+    );
+
+    expect(architect.argv).toEqual(["/bin/ollama", "run", "qwen2.5-coder:7b", "plan this"]);
+    expect(worker.argv).toEqual(["/bin/ollama", "run", "qwen2.5-coder:7b", "write this"]);
+  });
+
   it("returns architect and worker commands via buildAdapterCommands", () => {
     const commands = buildAdapterCommands({
       adapterId: "codex",

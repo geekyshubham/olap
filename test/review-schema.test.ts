@@ -32,6 +32,16 @@ describe("architect review schema", () => {
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
+  it("rejects NaN numeric fields", () => {
+    const review = {
+      ...sampleReview(1, "pass"),
+      iteration: Number.NaN,
+      token_budget_used: Number.NaN,
+    };
+    const result = validateArchitectReview(review, DEFAULT_CONFIG.architect.review_schema_version);
+    expect(result.valid).toBe(false);
+  });
+
   it("accepts a passing final-iteration review", () => {
     const review = sampleReview(3, "pass");
     expect(review.verdict).toBe("pass");

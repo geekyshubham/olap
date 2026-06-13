@@ -23,6 +23,11 @@ export interface ExecOptions {
   signal?: AbortSignal;
 }
 
+export interface ProcessCommand {
+  binary: string;
+  argv: string[];
+}
+
 function splitLines(buffer: string, onLine: (line: string) => void): string {
   let rest = buffer;
   let index = rest.indexOf("\n");
@@ -34,12 +39,9 @@ function splitLines(buffer: string, onLine: (line: string) => void): string {
   return rest;
 }
 
-/**
- * Spawn an adapter command and stream its output. argv[0] is the binary.
- * This is the bridge between OLAP's command contracts and real CLI workers.
- */
-export function executeCommand(
-  command: AdapterCommand,
+/** Spawn a process and stream its output. argv[0] is the binary. */
+export function executeProcess(
+  command: ProcessCommand,
   options: ExecOptions,
 ): Promise<ExecResult> {
   const start = Date.now();
@@ -57,12 +59,14 @@ export function executeCommand(
       cwd: options.cwd,
       env: options.env ?? process.env,
       windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     const finish = (result: Omit<ExecResult, "durationMs">) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       if (options.signal) options.signal.removeEventListener("abort", onAbort);
       // Flush any trailing partial line.
       if (stdoutBuf) options.onLine?.("stdout", stdoutBuf.replace(/\r$/, ""));
@@ -70,15 +74,37 @@ export function executeCommand(
       resolve({ ...result, durationMs: Date.now() - start });
     };
 
+    let killTimer: NodeJS.Timeout | undefined;
+
+    const escalateKill = (): void => {
+      if (settled) return;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // process may already be gone
+      }
+    };
+
+    const terminate = (): void => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+      if (killTimer) clearTimeout(killTimer);
+      killTimer = setTimeout(escalateKill, 5_000);
+      killTimer.unref?.();
+    };
+
     const onAbort = () => {
       aborted = true;
-      child.kill("SIGTERM");
+      terminate();
     };
 
     const timer = options.timeoutMs
       ? setTimeout(() => {
           timedOut = true;
-          child.kill("SIGTERM");
+          terminate();
         }, options.timeoutMs)
       : undefined;
     timer?.unref?.();
@@ -116,4 +142,15 @@ export function executeCommand(
       });
     });
   });
+}
+
+/**
+ * Spawn an adapter command and stream its output. This is the bridge between
+ * OLAP's command contracts and real CLI workers.
+ */
+export function executeCommand(
+  command: AdapterCommand,
+  options: ExecOptions,
+): Promise<ExecResult> {
+  return executeProcess(command, options);
 }

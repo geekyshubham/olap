@@ -7,6 +7,7 @@ import {
 import type {
   AccessConfig,
   ArchitectReview,
+  CostSnapshot,
   RunEvent,
   UsageSnapshot,
   WorkMode,
@@ -15,6 +16,7 @@ import type { RunPlan } from "../run/routing.js";
 import type { RepoStatus } from "../git/status.js";
 import { formatDiffSummary, formatRepoStatus } from "../git/status.js";
 import type { DiffSummary } from "../git/status.js";
+import { formatCostSummary } from "../run/cost.js";
 import {
   formatDuration,
   formatModelBadge,
@@ -583,6 +585,7 @@ export class UsagePanelComponent implements Component {
   private contextAvailable = 0;
   private orchestratorModel = "";
   private workerModel = "";
+  private cost: CostSnapshot | undefined;
   private activeRole: "orchestrator" | "worker" | null = null;
   private frame = 0;
   private theme: Theme;
@@ -590,6 +593,7 @@ export class UsagePanelComponent implements Component {
 
   constructor(init?: {
     usage?: UsageSnapshot;
+    cost?: CostSnapshot;
     orchestratorModel?: string;
     workerModel?: string;
     theme?: Theme;
@@ -600,6 +604,7 @@ export class UsagePanelComponent implements Component {
       subagents_spawned: 0,
       subagents_active: 0,
     };
+    this.cost = init?.cost;
     this.orchestratorModel = init?.orchestratorModel ?? "";
     this.workerModel = init?.workerModel ?? "";
     this.theme = init?.theme ?? getTheme();
@@ -617,6 +622,16 @@ export class UsagePanelComponent implements Component {
     return this.visiblePanel;
   }
 
+  /** Rows this panel occupies in the layout (0 when hidden or idle). */
+  chromeRowCount(): number {
+    if (!this.visiblePanel) return 0;
+    const idle =
+      this.usage.orchestrator.calls === 0 &&
+      this.usage.worker.calls === 0 &&
+      this.contextUsed === 0;
+    return idle ? 0 : 3;
+  }
+
   setModels(orchestrator: string, worker: string): void {
     this.orchestratorModel = orchestrator;
     this.workerModel = worker;
@@ -632,11 +647,13 @@ export class UsagePanelComponent implements Component {
 
   update(patch: {
     usage?: UsageSnapshot;
+    cost?: CostSnapshot;
     contextUsed?: number;
     contextMax?: number;
     contextAvailable?: number;
   }): void {
     if (patch.usage) this.usage = patch.usage;
+    if (patch.cost) this.cost = patch.cost;
     if (patch.contextUsed !== undefined) this.contextUsed = patch.contextUsed;
     if (patch.contextMax !== undefined) this.contextMax = patch.contextMax;
     if (patch.contextAvailable !== undefined) this.contextAvailable = patch.contextAvailable;
@@ -651,6 +668,8 @@ export class UsagePanelComponent implements Component {
     };
     this.contextUsed = 0;
     this.contextAvailable = 0;
+    this.cost = undefined;
+    this.activeRole = null;
   }
 
   invalidate(): void {}
@@ -686,7 +705,8 @@ export class UsagePanelComponent implements Component {
     const ctxDenom = this.contextAvailable > 0 ? this.contextAvailable : this.contextMax;
     const ctx = this.gaugeText("context", this.contextUsed, ctxDenom, 8);
     const tokens = `${t.dim("tokens")} ${t.tokens(`↑${formatTokenCount(totalIn)} ↓${formatTokenCount(totalOut)}`)}`;
-    const gauges = `${ctx}    ${tokens}`;
+    const cost = this.cost?.enabled ? `    ${t.dim(formatCostSummary(this.cost))}` : "";
+    const gauges = `${ctx}    ${tokens}${cost}`;
     return [
       truncateToWidth(` ${orch}`, width),
       truncateToWidth(` ${wrk}    ${sub}`, width),
@@ -793,6 +813,7 @@ export class RunPlanOverlay implements Component {
       body.push(body.length === 0 ? `${t.dim("Task:")}        ${t.text(line)}` : `             ${t.text(line)}`);
     }
     body.push(`${t.dim("Strategy:")}    ${strategy}`);
+    body.push(`${t.dim("Complexity:")}  ${t.text(p.complexity)}`);
     body.push(`${t.dim("Reason:")}      ${t.text(p.reason)}`);
     body.push(`${t.dim("Stops when:")}  ${t.text(p.stopConditions.join(" · "))}`);
     body.push(`${t.dim("Mode:")}        ${t.text(p.mode)}`);

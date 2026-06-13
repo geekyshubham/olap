@@ -66,4 +66,30 @@ describe("session registry", () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0].status).toBe("completed");
   });
+
+  it("reactivates a completed session on resume with a fresh task summary", async () => {
+    const cwd = await createTempDir();
+    const sessionId = createSessionId();
+
+    await registerSession({
+      cwd,
+      task: "first task",
+      adapter: "grok",
+      runId: "run-1",
+      sessionId,
+    });
+    await completeSession(cwd, sessionId, "completed");
+
+    const resumed = await registerSession({
+      cwd,
+      task: "resume with new work",
+      adapter: "grok",
+      runId: "run-2",
+      sessionId,
+    });
+
+    expect(resumed.status).toBe("active");
+    expect(resumed.task_summary).toContain("resume with new work");
+    expect(resumed.run_ids).toEqual(["run-1", "run-2"]);
+  });
 });

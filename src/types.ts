@@ -1,6 +1,8 @@
-export type AdapterId = "grok" | "claude" | "gemini" | "codex" | "kiro";
+export type AdapterId = "grok" | "claude" | "gemini" | "codex" | "kiro" | "ollama";
 
 export type ArchitectVerdict = "pass" | "revise" | "fail";
+
+export type TaskComplexity = "trivial" | "moderate" | "complex";
 
 /** Roles that map to a concrete adapter + model. */
 export type RoleId = "orchestrator" | "worker";
@@ -30,6 +32,23 @@ export interface AdapterSpec {
 export interface AdapterOptions {
   model?: string;
   extra_args: string[];
+}
+
+export interface AdapterCapabilityProfile {
+  planning: boolean;
+  review: boolean;
+  file_edits: boolean;
+  shell: boolean;
+  model_discovery: boolean;
+  local: boolean;
+  notes?: string;
+}
+
+export interface TokenPrice {
+  /** USD per 1M input tokens. */
+  input: number;
+  /** USD per 1M output tokens. */
+  output: number;
 }
 
 /** A role binds an adapter (which CLI) to a model (which weights). */
@@ -92,6 +111,8 @@ export interface OlapConfig {
     preferred: AdapterId;
     fallback: AdapterId;
     options: Partial<Record<AdapterId, AdapterOptions>>;
+    /** Built-in capability profiles can be overridden per adapter. */
+    capabilities: Partial<Record<AdapterId, AdapterCapabilityProfile>>;
   };
   /** Role-based model selection: orchestrator plans/reviews, worker codes. */
   roles: Record<RoleId, RoleConfig>;
@@ -113,6 +134,13 @@ export interface OlapConfig {
     stop_on_first_pass: boolean;
     /** How often to use the architect/worker review loop vs a single worker pass. */
     loop_policy: LoopPolicy;
+  };
+  cost: {
+    enabled: boolean;
+    currency: "USD";
+    /** Stop a run once the estimated role cost exceeds this value. 0 disables the cap. */
+    session_budget_usd: number;
+    prices_per_million_tokens: Partial<Record<AdapterId, Record<string, TokenPrice>>>;
   };
   modules: OlapModuleConfig[];
   validators: ValidatorConfig[];
@@ -221,6 +249,21 @@ export interface UsageSnapshot {
   subagents_active: number;
 }
 
+export interface CostSnapshot {
+  enabled: boolean;
+  currency: "USD";
+  orchestrator_usd: number;
+  worker_usd: number;
+  total_usd: number;
+  single_model_baseline_usd: number;
+  savings_usd: number;
+  savings_percent: number;
+  pricing_complete: boolean;
+  budget_usd?: number;
+  budget_used_percent?: number;
+  budget_exceeded?: boolean;
+}
+
 export interface ValidatorResult {
   name: string;
   command: string;
@@ -251,4 +294,6 @@ export interface RunSummary {
   worker_cancelled?: boolean;
   /** Validator gate result (workflow mode): true=all passed, false=some failed, undefined=not run. */
   validators_passed?: boolean;
+  /** Estimated run cost and single-model comparison. */
+  cost?: CostSnapshot;
 }

@@ -108,6 +108,7 @@ describe("E2E CLI", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("completed");
+    expect(result.stdout).toContain("Cost:");
 
     const runs = await readdir(join(dir, ".olap", "runs"));
     expect(runs.length).toBeGreaterThan(0);
@@ -174,6 +175,26 @@ describe("E2E CLI", () => {
       ),
     ) as Array<{ argv: string[] }>;
     expect(commands.some((c) => c.argv.includes("grok-build"))).toBe(true);
+  });
+
+  it("runs graphify and headroom helper commands with installed binaries", async () => {
+    const dir = await createTempDir("olap-e2e-tools-");
+    const binDir = join(dir, "bin");
+    await writeFakeBinary(binDir, "graphify", '#!/bin/sh\necho "graphify:$*"\n');
+    await writeFakeBinary(binDir, "headroom", '#!/bin/sh\necho "headroom:$*"\n');
+    const env = isolatedEnv(binDir);
+
+    const graphify = await runCli(["graphify"], { cwd: dir, env });
+    expect(graphify.exitCode).toBe(0);
+    expect(graphify.stdout).toContain("graphify:.");
+
+    const graphifyWithArgs = await runCli(["graphify", "src", "--no-open"], { cwd: dir, env });
+    expect(graphifyWithArgs.exitCode).toBe(0);
+    expect(graphifyWithArgs.stdout).toContain("graphify:src --no-open");
+
+    const headroom = await runCli(["headroom"], { cwd: dir, env });
+    expect(headroom.exitCode).toBe(0);
+    expect(headroom.stdout).toContain("headroom:perf");
   });
 
   it("fails clearly when adapters are missing", async () => {

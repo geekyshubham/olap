@@ -11,8 +11,11 @@ OLAP separates orchestration from worker execution through adapter command build
 | Gemini | `gemini` | `gemini --approval-mode plan --prompt <prompt>` | `gemini --approval-mode <mode> --prompt <task>` |
 | Codex | `codex` | `codex exec --sandbox read-only <prompt>` | `codex exec --sandbox <policy> --ask-for-approval <policy> <task>` |
 | Kiro | `kiro-cli` | `kiro-cli chat --no-interactive --trust-tools=fs_read <prompt>` | `kiro-cli chat --no-interactive <trust flags> <task>` |
+| Ollama | `ollama` | `ollama run <model> <prompt>` | `ollama run <model> <task>` |
 
-Builders add the role's model via the adapter's `--model` flag (omitted when no model is pinned, so the CLI uses its own default), and JSON output flags where the CLI supports them. The architect phase always runs read-only / plan, regardless of access settings, because planning should never write.
+Builders add the role's model via the adapter's native model mechanism (`--model` for most CLIs, positional model for Ollama), and JSON output flags where the CLI supports them. The architect phase always runs read-only / plan, regardless of access settings, because planning should never write.
+
+Ollama is a local text adapter. It can produce plans/reviews, but its default capability profile sets `file_edits: false` and `shell: false`; use it for plan mode, review assistance, or custom local workflows rather than expecting it to edit files like the agentic coding CLIs.
 
 ## Roles
 
@@ -44,7 +47,7 @@ Kiro maps the same access vocabulary to `kiro-cli chat` trust flags: `read-only`
 `olap models` and the TUI model pickers ask each installed CLI for its models where possible, falling back to a built-in catalog:
 
 - Grok: runs `grok models` and parses the reported list (including the default).
-- Other adapters use the static catalog; Kiro defers to its own configured default model unless you pin one.
+- Other adapters use the static catalog; Kiro defers to its own configured default model unless you pin one. Ollama defaults to `qwen2.5-coder:7b`, but any locally installed Ollama model can be pinned in `roles`.
 
 Discovered models are cached in-process and refreshed on startup, so the pickers reflect what your CLIs actually support rather than a fixed guess.
 

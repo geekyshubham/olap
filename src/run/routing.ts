@@ -1,10 +1,11 @@
-import type { LoopPolicy, OlapConfig, RoleConfig, WorkMode } from "../types.js";
+import type { LoopPolicy, OlapConfig, RoleConfig, TaskComplexity, WorkMode } from "../types.js";
 
 export type RunStrategy = "direct" | "loop";
 
 export interface RouteDecision {
   strategy: RunStrategy;
   reason: string;
+  complexity: TaskComplexity;
 }
 
 /** A preview of how a submitted task will run, for the pre-run confirmation overlay. */
@@ -12,6 +13,7 @@ export interface RunPlan {
   /** Task text after stripping /direct or /loop prefixes. */
   task: string;
   strategy: RunStrategy;
+  complexity: TaskComplexity;
   reason: string;
   mode: WorkMode;
   /** Effective iteration cap (1 for direct/single-pass). */
@@ -38,6 +40,29 @@ const LOOP_HINTS = [
   /\b(implement|refactor|add|fix|write|create|design|build|migrate)\b/i,
   /\b(loop|iterate|review)\b/i,
   /\barchitect\b/i,
+];
+
+const TRIVIAL_HINTS = [
+  /\btypo\b/i,
+  /\bcopy\b/i,
+  /\bcomment\b/i,
+  /\bdocstring\b/i,
+  /\breadme\b/i,
+  /\bone[-\s]?line\b/i,
+  /\bsmall\s+(text|copy|docs?)\b/i,
+];
+
+const COMPLEX_HINTS = [
+  /\bimplement\b/i,
+  /\brefactor\b/i,
+  /\bmigrate\b/i,
+  /\bauth\b/i,
+  /\bdatabase\b/i,
+  /\be2e\b/i,
+  /\barchitecture\b/i,
+  /\bparallel\b/i,
+  /\buntil\s+all\b/i,
+  /\b(loop|iterate)\b/i,
 ];
 
 /**
@@ -77,6 +102,18 @@ function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((re) => re.test(text));
 }
 
+export function classifyTaskComplexity(task: string): TaskComplexity {
+  const text = task.toLowerCase();
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (matchesAny(text, TRIVIAL_HINTS) && words <= 12 && !matchesAny(text, COMPLEX_HINTS)) {
+    return "trivial";
+  }
+  if (matchesAny(text, COMPLEX_HINTS) || words > 28) {
+    return "complex";
+  }
+  return "moderate";
+}
+
 /** User overrides via slash prefix or explicit flags in the task text. */
 export function parseTaskOverride(task: string): { task: string; force?: RunStrategy } {
   const trimmed = task.trim();
@@ -98,10 +135,12 @@ export function parseTaskOverride(task: string): { task: string; force?: RunStra
  */
 export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
   const { task: cleaned, force } = parseTaskOverride(task);
+  const complexity = classifyTaskComplexity(cleaned);
   if (force) {
     return {
       strategy: force,
       reason: force === "direct" ? "forced direct (/direct)" : "forced loop (/loop)",
+      complexity,
     };
   }
 
@@ -109,18 +148,26 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
 
   // 2. Configured policy (explicit always/never wins over NL hints).
   if (policy === "always") {
-    return { strategy: "loop", reason: "loop policy: always" };
+    return { strategy: "loop", reason: "loop policy: always", complexity };
   }
   if (policy === "never") {
-    return { strategy: "direct", reason: "loop policy: never" };
+    return { strategy: "direct", reason: "loop policy: never", complexity };
   }
 
   // 3. Natural-language intent for this task (auto policy only).
   if (matchesAny(text, FORCE_DIRECT_HINTS)) {
-    return { strategy: "direct", reason: "you asked for a single pass — no review loop" };
+    return { strategy: "direct", reason: "you asked for a single pass — no review loop", complexity };
   }
   if (matchesAny(text, FORCE_LOOP_HINTS)) {
-    return { strategy: "loop", reason: "you asked to keep iterating — review loop on" };
+    return { strategy: "loop", reason: "you asked to keep iterating — review loop on", complexity };
+  }
+
+  if (complexity === "trivial") {
+    return {
+      strategy: "direct",
+      reason: "trivial mechanical task — direct worker (use /loop to force review loop)",
+      complexity,
+    };
   }
 
   // 4. Keyword scoring.
@@ -131,15 +178,24 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
     return {
       strategy: "direct",
       reason: "operational task — single worker pass (use /loop to force review loop)",
+      complexity,
     };
   }
   if (loopScore > directScore) {
-    return { strategy: "loop", reason: "implementation task — full orchestrator/worker loop" };
+    return {
+      strategy: "loop",
+      reason:
+        complexity === "moderate"
+          ? "moderate implementation task — shortened review loop"
+          : "complex implementation task — full orchestrator/worker loop",
+      complexity,
+    };
   }
   if (directScore > 0) {
     return {
       strategy: "direct",
       reason: "looks operational — defaulting to direct (use /loop to force review loop)",
+      complexity,
     };
   }
 
@@ -148,10 +204,18 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
     return {
       strategy: "direct",
       reason: "short task — direct worker (use /loop for architect/worker loop)",
+      complexity,
     };
   }
 
-  return { strategy: "loop", reason: "default — full orchestrator/worker loop" };
+  return {
+    strategy: "loop",
+    reason:
+      complexity === "moderate"
+        ? "default moderate task — shortened review loop"
+        : "default complex task — full orchestrator/worker loop",
+    complexity,
+  };
 }
 
 function roleBadge(role: RoleConfig): string {
@@ -166,7 +230,11 @@ export function buildRunPlan(task: string, config: OlapConfig): RunPlan {
   const { task: cleaned } = parseTaskOverride(task);
   const decision = routeTask(task, config.worker.loop_policy);
   const direct = decision.strategy === "direct";
-  const maxIterations = direct ? 1 : Math.max(1, config.worker.max_iterations);
+  const maxIterations = direct
+    ? 1
+    : decision.complexity === "moderate"
+      ? Math.max(1, Math.min(2, config.worker.max_iterations))
+      : Math.max(1, config.worker.max_iterations);
 
   const stopConditions: string[] = [];
   if (direct) {
@@ -183,6 +251,7 @@ export function buildRunPlan(task: string, config: OlapConfig): RunPlan {
   return {
     task: cleaned,
     strategy: decision.strategy,
+    complexity: decision.complexity,
     reason: decision.reason,
     mode: config.ui.mode,
     maxIterations,

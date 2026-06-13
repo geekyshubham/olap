@@ -5,7 +5,7 @@ import { resolveModelsForRole } from "../adapters/discover.js";
 import { OlapSettingsList, type OlapSettingItem } from "./settings-list.js";
 import { makeSelectListTheme, themeNames, type Theme } from "./theme.js";
 
-const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro"];
+const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro", "ollama"];
 const MODES = ["plan", "build", "workflow"];
 const APPROVALS = ["untrusted", "on-failure", "on-request", "never"];
 const SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
