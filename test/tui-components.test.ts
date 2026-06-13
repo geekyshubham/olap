@@ -179,13 +179,13 @@ describe("TUI components", () => {
         pricing_complete: true,
       },
     });
-    const lines = panel.render(100);
-    assertWithinWidth(lines, 100);
+    const lines = panel.render(130);
+    assertWithinWidth(lines, 130);
     const joined = lines.join("\n");
     expect(joined).toContain("orchestrator");
     expect(joined).toContain("worker");
-    // Honest gauge: real repo coverage (packed/available) + real token totals,
-    // no perpetual "100% ⚠ truncated".
+    // Honest gauge: real repo coverage (packed/available) + packed size + real
+    // token totals, no perpetual "100% ⚠ truncated".
     expect(joined).toContain("context");
     expect(joined).toContain("tokens");
     expect(joined).toContain("$0.0060");
@@ -400,5 +400,75 @@ describe("run-plan overlay", () => {
     expect(joined).toContain("grok:grok-composer-2.5-fast");
     expect(joined).toContain("Start");
     expect(joined).toContain("Cancel");
+  });
+});
+
+describe("run summary block", () => {
+  const theme = getTheme();
+
+  it("renders a completed summary with files, churn, and a report link", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 80 });
+    convo.setReservedRows(0);
+    convo.addSummary({
+      status: "completed",
+      iterations: 2,
+      files: ["app/intel/views.py", "frontend/src/App.jsx"],
+      insertions: 10,
+      deletions: 3,
+      runId: "RID1",
+      workerCancelled: false,
+    });
+    const joined = convo.render(120).join("\n");
+    expect(joined).toContain("Run completed");
+    expect(joined).toContain("2 iterations");
+    expect(joined).toContain("app/intel/views.py");
+    expect(joined).toContain("+10");
+    expect(joined).toContain("RID1/final-report.md");
+  });
+
+  it("marks cancelled runs and worker cancellation", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 80 });
+    convo.setReservedRows(0);
+    convo.addSummary({
+      status: "cancelled",
+      iterations: 1,
+      files: [],
+      insertions: 0,
+      deletions: 0,
+      runId: "RID2",
+      workerCancelled: true,
+    });
+    const joined = convo.render(120).join("\n");
+    expect(joined).toContain("Run cancelled");
+    expect(joined).toContain("worker cancelled");
+    expect(joined).toContain("no file changes");
+  });
+});
+
+describe("verbose collapse", () => {
+  const theme = getTheme();
+
+  it("collapses agent/output/command detail when off and expands when on", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 80 });
+    convo.setReservedRows(0);
+    convo.addUser("review the tool");
+    convo.addAgent("text", "worker doing the work");
+    convo.addOutput("stdout", "a noisy output line");
+    convo.addCommand("worker", "grok -p ...");
+
+    // Verbose (default): detail is visible.
+    expect(convo.render(120).join("\n")).toContain("worker doing the work");
+
+    // Collapsed: detail hidden behind a summary, structural entries remain.
+    convo.setVerbose(false);
+    const collapsed = convo.render(120).join("\n");
+    expect(collapsed).not.toContain("worker doing the work");
+    expect(collapsed).toContain("activity lines hidden");
+    expect(collapsed).toContain("/verbose");
+    expect(collapsed).toContain("review the tool");
+
+    // Toggle back on.
+    expect(convo.toggleVerbose()).toBe(true);
+    expect(convo.render(120).join("\n")).toContain("worker doing the work");
   });
 });

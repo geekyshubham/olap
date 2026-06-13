@@ -81,14 +81,18 @@ export function formatUsd(value: number): string {
   return `$${value.toFixed(4)}`;
 }
 
-export function formatCostSummary(cost: CostSnapshot): string {
+export function formatCostSummary(cost: CostSnapshot, estimated = false): string {
   if (!cost.enabled) return "cost estimates disabled";
+  if (!cost.pricing_complete) {
+    return "cost n/a — add cost.prices_per_million_tokens for these models";
+  }
+  const tilde = estimated ? "~" : "";
+  const suffix = estimated ? " (est)" : "";
   const parts = [
-    `cost ${formatUsd(cost.total_usd)}`,
-    `single-model est. ${formatUsd(cost.single_model_baseline_usd)}`,
-    `saved ${cost.savings_percent}%`,
+    `cost ${tilde}${formatUsd(cost.total_usd)}`,
+    `single-model ${tilde}${formatUsd(cost.single_model_baseline_usd)}`,
+    `saved ${cost.savings_percent}%${suffix}`,
   ];
-  if (!cost.pricing_complete) parts.push("pricing incomplete");
   if (cost.budget_usd) {
     parts.push(`budget ${cost.budget_used_percent ?? 0}%`);
   }

@@ -31,6 +31,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "access", description: "Open access-control settings (approval, sandbox, network)" },
   { name: "adapters", description: "Show detected coding CLIs on PATH" },
   { name: "usage", description: "Toggle the orchestrator/worker usage panel" },
+  { name: "verbose", description: "Toggle full agent/tool/output detail (collapse to summaries)" },
   { name: "graphify", description: "Run Graphify for this project: /graphify [target|args]" },
   { name: "headroom", description: "Run Headroom helpers: /headroom [perf|stats|args]" },
   { name: "clear", description: "Clear the conversation and metrics" },
@@ -42,7 +43,7 @@ export const SHORTCUT_HINTS = [
   "/settings",
   "/mode",
   "/theme",
-  "PgUp/PgDn scroll",
+  "↑/↓ scroll",
   "^L clear",
   "^C quit",
 ] as const;
@@ -50,7 +51,7 @@ export const SHORTCUT_HINTS = [
 export const SHORTCUT_HINTS_RUNNING = [
   "Esc cancel",
   "^C cancel run",
-  "PgUp/PgDn scroll",
+  "↑/↓ scroll",
 ] as const;
 
 export const HELP_LINES = [
@@ -76,7 +77,7 @@ export const HELP_LINES = [
   "",
   "Shortcuts:",
   "  Enter       Run the task in the editor",
-  "  PgUp/PgDn   Scroll the transcript (↑/↓ when the input is empty)",
+  "  ↑/↓        Scroll the transcript when the input is empty (PgUp/PgDn also work)",
   "  Ctrl+L      Clear the conversation",
   "  Ctrl+C      Cancel a running task, or quit when idle",
   "  Esc         Close an overlay / cancel a running task",

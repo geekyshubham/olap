@@ -14,7 +14,6 @@ import { readConfig } from "../config/read.js";
 import { writeConfig } from "../config/write.js";
 import { generateContextPack } from "../context/pack.js";
 import { getRepoStatus } from "../git/status.js";
-import { formatDiffSummary } from "../git/status.js";
 import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
 import { runOrchestratedLoop, terminalSessionStatus, type LoopUpdate } from "../run/loop.js";
 import { buildRunPlan } from "../run/routing.js";
@@ -420,6 +419,11 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         usage.setVisible(!usage.isVisible());
         conversation.addNote(`Usage panel ${usage.isVisible() ? "shown" : "hidden"}`, "dim");
         break;
+      case "verbose": {
+        const on = conversation.toggleVerbose();
+        conversation.addNote(`Verbose output ${on ? "on (full detail)" : "off (collapsed)"}`, "dim");
+        break;
+      }
       case "graphify":
         void runToolFromTui("graphify", arg);
         return;
@@ -583,15 +587,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       });
 
       conversation.setRunning(false);
-      if (cancelledByUser) {
-        conversation.addNote(`Run ${runId} cancelled · artifacts in .olap/runs/${runId}`, "warn");
-      } else {
-        const changeNote = result.executed ? ` · ${formatDiffSummary(result.diff)}` : "";
-        conversation.addNote(
-          `Run ${runId} ${result.status}${changeNote} · artifacts in .olap/runs/${runId}`,
-          result.status === "completed" ? "success" : "error",
-        );
-      }
+      conversation.addSummary({
+        status: cancelledByUser ? "cancelled" : result.status,
+        iterations: result.summary.iterations,
+        files: result.diff.files.map((f) => f.path),
+        insertions: result.diff.insertions,
+        deletions: result.diff.deletions,
+        runId,
+        workerCancelled: result.summary.worker_cancelled ?? false,
+      });
 
       getRepoStatus(cwd)
         .then((next) => {

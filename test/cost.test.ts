@@ -49,6 +49,6 @@ describe("cost estimates", () => {
     });
 
     expect(cost.pricing_complete).toBe(false);
-    expect(formatCostSummary(cost)).toContain("pricing incomplete");
+    expect(formatCostSummary(cost)).toContain("cost n/a");
   });
 });

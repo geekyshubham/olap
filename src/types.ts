@@ -247,6 +247,8 @@ export interface UsageSnapshot {
   worker: RoleUsage;
   subagents_spawned: number;
   subagents_active: number;
+  /** True when token counts are estimated from I/O text because the CLI reported no usage. */
+  estimated: boolean;
 }
 
 export interface CostSnapshot {

@@ -232,7 +232,17 @@ export type ConversationEntry =
     }
   | { kind: "output"; stream: "stdout" | "stderr"; line: string }
   | { kind: "diff"; summary: DiffSummary }
-  | { kind: "review"; review: ArchitectReview };
+  | { kind: "review"; review: ArchitectReview }
+  | {
+      kind: "summary";
+      status: "completed" | "failed" | "cancelled";
+      iterations: number;
+      files: string[];
+      insertions: number;
+      deletions: number;
+      runId: string;
+      workerCancelled: boolean;
+    };
 
 /** Keep effectively all transcript history in memory for scrollback; only the
  *  rendered viewport is bounded. Capped generously to avoid unbounded growth. */
@@ -271,6 +281,7 @@ export class ConversationComponent implements Component {
   private runId = "";
   /** Last render width — used to anchor scroll when new lines arrive off-tail. */
   private lastWidth = 80;
+  private verbose = true;
 
   constructor(theme?: Theme, options?: { rows?: () => number }) {
     this.theme = theme ?? getTheme();
@@ -347,6 +358,18 @@ export class ConversationComponent implements Component {
     this.push({ kind: "diff", summary });
   }
 
+  addSummary(summary: {
+    status: "completed" | "failed" | "cancelled";
+    iterations: number;
+    files: string[];
+    insertions: number;
+    deletions: number;
+    runId: string;
+    workerCancelled: boolean;
+  }): void {
+    this.push({ kind: "summary", ...summary });
+  }
+
   /** Record the current sub-activity (tool/file) for the live peek row. */
   setActivity(label: string): void {
     this.activity = label;
@@ -401,6 +424,16 @@ export class ConversationComponent implements Component {
   setReservedRows(rows: number | (() => number)): void {
     this.reservedRows = rows;
   }
+
+  setVerbose(verbose: boolean): void {
+    this.verbose = verbose;
+  }
+
+  toggleVerbose(): boolean {
+    this.verbose = !this.verbose;
+    return this.verbose;
+  }
+
   private chromeReservedRows(): number {
     const rows = typeof this.reservedRows === "function" ? this.reservedRows() : this.reservedRows;
     return Math.max(0, rows);
@@ -560,14 +593,67 @@ export class ConversationComponent implements Component {
         }
         return lines;
       }
+      case "summary": {
+        const s = entry;
+        const head =
+          s.status === "completed"
+            ? t.success(`✓ Run completed`)
+            : s.status === "cancelled"
+              ? t.warn(`⊘ Run cancelled`)
+              : t.error(`✗ Run failed`);
+        const iters = `${s.iterations} iteration${s.iterations === 1 ? "" : "s"}`;
+        const churn =
+          s.files.length > 0
+            ? `${s.files.length} file${s.files.length === 1 ? "" : "s"} changed ${t.success(`+${s.insertions}`)} ${t.error(`-${s.deletions}`)}`
+            : t.dim("no file changes");
+        const cancelTag = s.workerCancelled ? ` ${t.warn("· worker cancelled")}` : "";
+        const lines = [truncateToWidth(`  ${head} ${t.dim("·")} ${t.dim(iters)} ${t.dim("·")} ${churn}${cancelTag}`, width)];
+        for (const file of s.files.slice(0, 6)) {
+          lines.push(truncateToWidth(`      ${t.dim(file)}`, width));
+        }
+        if (s.files.length > 6) {
+          lines.push(truncateToWidth(`      ${t.dim(`… +${s.files.length - 6} more files`)}`, width));
+        }
+        lines.push(
+          truncateToWidth(
+            `      ${t.faint(`report .olap/runs/${s.runId}/final-report.md · brief …/brief.md`)}`,
+            width,
+          ),
+        );
+        return lines;
+      }
     }
   }
 
   render(width: number): string[] {
     this.lastWidth = width;
     const bodyLines: string[] = [];
-    for (const entry of this.entries) {
-      bodyLines.push(...this.renderEntry(entry, width));
+    const isDetail = (e: ConversationEntry): boolean =>
+      e.kind === "agent" || e.kind === "output" || e.kind === "command";
+    if (this.verbose) {
+      for (const entry of this.entries) bodyLines.push(...this.renderEntry(entry, width));
+    } else {
+      let detail = 0;
+      const flush = (): void => {
+        if (detail > 0) {
+          bodyLines.push(
+            truncateToWidth(
+              this.theme.faint(`  ⋯ ${detail} activity line${detail === 1 ? "" : "s"} hidden — /verbose to expand`),
+              width,
+            ),
+          );
+          detail = 0;
+        }
+      };
+      for (const entry of this.entries) {
+        if (isDetail(entry)) {
+          detail += this.renderEntry(entry, width).length;
+          continue;
+        }
+        flush();
+        bodyLines.push(...this.renderEntry(entry, width));
+      }
+      flush();
     }
     let statusLine: string | undefined;
     if (this.running) {
@@ -609,12 +695,12 @@ export class ConversationComponent implements Component {
     }
     const view: string[] = [];
     if (hintTop) {
-      view.push(truncateToWidth(this.theme.dim(`  ↑ ${startIdx} more — PgUp to scroll`), width));
+      view.push(truncateToWidth(this.theme.dim(`  ↑ ${startIdx} more — ↑/PgUp to scroll`), width));
     }
     view.push(...all.slice(startIdx, end));
     if (hintBottom) {
       view.push(truncateToWidth(
-        this.theme.dim(`  ↓ ${this.scrollOffset} more — PgDn to scroll`), width));
+        this.theme.dim(`  ↓ ${this.scrollOffset} more — ↓/PgDn to scroll`), width));
     }
     return view;
   }
@@ -646,6 +732,7 @@ export class UsagePanelComponent implements Component {
       worker: { tokens_in: 0, tokens_out: 0, calls: 0 },
       subagents_spawned: 0,
       subagents_active: 0,
+      estimated: false,
     };
     this.cost = init?.cost;
     this.orchestratorModel = init?.orchestratorModel ?? "";
@@ -708,6 +795,7 @@ export class UsagePanelComponent implements Component {
       worker: { tokens_in: 0, tokens_out: 0, calls: 0 },
       subagents_spawned: 0,
       subagents_active: 0,
+      estimated: false,
     };
     this.contextUsed = 0;
     this.contextAvailable = 0;
@@ -745,9 +833,10 @@ export class UsagePanelComponent implements Component {
     const totalIn = this.usage.orchestrator.tokens_in + this.usage.worker.tokens_in;
     const totalOut = this.usage.orchestrator.tokens_out + this.usage.worker.tokens_out;
     const ctxDenom = this.contextAvailable > 0 ? this.contextAvailable : this.contextMax;
-    const ctx = this.gaugeText("context", this.contextUsed, ctxDenom, 8);
-    const tokens = `${t.dim("tokens")} ${t.tokens(`↑${formatTokenCount(totalIn)} ↓${formatTokenCount(totalOut)}`)}`;
-    const cost = this.cost?.enabled ? `    ${t.dim(formatCostSummary(this.cost))}` : "";
+    const ctx = `${this.gaugeText("context", this.contextUsed, ctxDenom, 8)} ${t.dim(`· ${formatTokenCount(this.contextUsed)} tok`)}`;
+    const est = this.usage.estimated;
+    const tokens = `${t.dim("tokens")} ${t.tokens(`${est ? "~" : ""}↑${formatTokenCount(totalIn)} ↓${formatTokenCount(totalOut)}`)}${est ? t.faint(" est") : ""}`;
+    const cost = this.cost?.enabled ? `    ${t.dim(formatCostSummary(this.cost, est))}` : "";
     const gauges = `${ctx}    ${tokens}${cost}`;
     return [
       truncateToWidth(` ${orch}`, width),

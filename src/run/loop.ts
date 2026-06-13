@@ -171,6 +171,7 @@ function emptyUsage(): UsageSnapshot {
     worker: { tokens_in: 0, tokens_out: 0, calls: 0 },
     subagents_spawned: 0,
     subagents_active: 0,
+    estimated: false,
   };
 }
 
@@ -254,6 +255,22 @@ export function parseUsageFromOutput(stdout: string): { tokens_in: number; token
     }
   }
   return { tokens_in: 0, tokens_out: 0 };
+}
+
+/** Real usage when the CLI reports it; otherwise an estimate from prompt + output text. */
+function usageOrEstimate(
+  stdout: string,
+  promptText: string,
+): { tokens_in: number; tokens_out: number; estimated: boolean } {
+  const parsed = parseUsageFromOutput(stdout);
+  if (parsed.tokens_in > 0 || parsed.tokens_out > 0) {
+    return { tokens_in: parsed.tokens_in, tokens_out: parsed.tokens_out, estimated: false };
+  }
+  return {
+    tokens_in: estimateTokens(promptText),
+    tokens_out: Math.max(1, estimateTokens(stdout)),
+    estimated: true,
+  };
 }
 
 function buildContextBlock(
@@ -413,9 +430,10 @@ export async function runOrchestratedLoop(
     executedCommands.push(planCommand);
     emit({ type: "command", role: "orchestrator", command: summarizeCommandShell(planCommand) });
     const planRun = await runProcess(planCommand, options, execute, emit, "orchestrator");
-    const planUsage = parseUsageFromOutput(planRun.stdout);
+    const planUsage = usageOrEstimate(planRun.stdout, planPrompt);
     usage.orchestrator.tokens_in += planUsage.tokens_in;
     usage.orchestrator.tokens_out += planUsage.tokens_out;
+    if (planUsage.estimated) usage.estimated = true;
     usage.orchestrator.calls += 1;
     planText = extractPlanText(planRun.stdout, "");
     if (!planRun.ok || !planText) {
@@ -495,7 +513,7 @@ export async function runOrchestratedLoop(
       emit({ type: "command", role: "worker", command: summarizeCommandShell(workerCommand) });
       const run = await runWorkerProcess(workerCommand, options, execute, emit);
       workerOutput = run.result.stdout;
-      const parsed = parseUsageFromOutput(run.result.stdout);
+      const parsed = usageOrEstimate(run.result.stdout, workerPrompt);
       const workerIn = parsed.tokens_in;
       const workerOut = parsed.tokens_out;
       const cancelled = run.result.aborted || isAbortedStopReason(run.stopReason);
@@ -521,6 +539,7 @@ export async function runOrchestratedLoop(
 
       usage.worker.tokens_in += workerIn;
       usage.worker.tokens_out += workerOut;
+      if (parsed.estimated) usage.estimated = true;
       usage.worker.calls += 1;
       pushEvent({
         ts: ts(),
@@ -768,9 +787,10 @@ async function produceReview(args: {
   args.executedCommands.push(reviewCommand);
   args.emit({ type: "command", role: "orchestrator", command: summarizeCommandShell(reviewCommand) });
   const run = await runProcess(reviewCommand, args.options, args.execute, args.emit, "orchestrator");
-  const reviewUsage = parseUsageFromOutput(run.stdout);
+  const reviewUsage = usageOrEstimate(run.stdout, reviewPrompt);
   usage.orchestrator.tokens_in += reviewUsage.tokens_in;
   usage.orchestrator.tokens_out += reviewUsage.tokens_out;
+  if (reviewUsage.estimated) usage.estimated = true;
   usage.orchestrator.calls += 1;
   if (!run.ok || run.timedOut) {
     const exitNote =

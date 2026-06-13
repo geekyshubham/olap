@@ -3,14 +3,51 @@ import { join, relative, resolve } from "node:path";
 import type { ContextPack, ContextPackFile, OlapConfig } from "../types.js";
 
 const DEFAULT_PATHS = [
+  // Project manifests (multi-language).
   "olap.config.yaml",
   "package.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "Gemfile",
+  "composer.json",
   "README.md",
+  // Common source roots across ecosystems.
   "src",
+  "app",
+  "lib",
   "test",
+  "tests",
+  "frontend",
+  "backend",
+  "server",
+  "client",
+  "api",
+  "cmd",
+  "internal",
+  "pkg",
+  "packages",
 ];
 
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".olap"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  "target",
+  "vendor",
+  "coverage",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  ".olap",
+]);
 const MAX_FILE_BYTES = 512 * 1024;
 
 /** True when `target` resolves under `root` (prevents absolute / traversal include paths). */

@@ -244,9 +244,12 @@ describe("runOrchestratedLoop", () => {
     expect(result.executed).toBe(true);
     expect(result.usage.orchestrator.calls).toBe(2);
     expect(result.usage.worker.calls).toBe(1);
-    // recordingExecutor plan/review JSON omits usage — counts stay zero (CLI JSON only).
-    expect(result.usage.orchestrator.tokens_in).toBe(0);
-    expect(result.usage.orchestrator.tokens_out).toBe(0);
+    // Orchestrator plan/review JSON omits usage, so its tokens are estimated from
+    // the prompt + output text and the snapshot is flagged as estimated.
+    expect(result.usage.orchestrator.tokens_in).toBeGreaterThan(0);
+    expect(result.usage.orchestrator.tokens_out).toBeGreaterThan(0);
+    expect(result.usage.estimated).toBe(true);
+    // The worker reports real usage, so those counts stay exact.
     expect(result.usage.worker.tokens_in).toBe(40);
     expect(result.usage.worker.tokens_out).toBe(60);
     expect(result.diff.changed).toBe(true);
