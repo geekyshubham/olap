@@ -67,24 +67,24 @@ User Prompt / Task
              │  confirmed by user
              ▼
 ┌─────────────────────────────┐
-│      OLAP Orchestrator       │
-│  (plans, reviews, delegates) │
-│   [your chosen model/CLI]    │
+│      OLAP Orchestrator      │
+│  (plans, reviews, delegates)│
+│   [your chosen model/CLI]   │
 └────────────┬────────────────┘
              │  sub-task instructions
              ▼
 ┌─────────────────────────────┐
-│        OLAP Worker           │
-│  (writes code, edits files,  │
-│   runs commands, tests)      │
-│   [your chosen model/CLI]    │
+│        OLAP Worker          │
+│  (writes code, edits files, │
+│   runs commands, tests)     │
+│   [your chosen model/CLI]   │
 └────────────┬────────────────┘
              │  implementation output (real changes tracked via git diff)
              ▼
 ┌─────────────────────────────┐
-│      OLAP Orchestrator       │
-│  (reviews output, iterates   │
-│   or marks task complete)    │
+│      OLAP Orchestrator      │
+│  (reviews output, iterates  │
+│   or marks task complete)   │
 └─────────────────────────────┘
 ```
 
