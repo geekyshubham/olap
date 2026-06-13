@@ -5,7 +5,9 @@ import {
   createSimulatedReview,
   validateArchitectReview,
 } from "../validators/review-schema.js";
+import { parseAgentOutputLine } from "./agent-output.js";
 import { executeCommand, type ExecResult } from "./executor.js";
+import { parseTaskOverride, routeTask } from "./routing.js";
 import type {
   AdapterCommand,
   AdapterDetection,
@@ -23,7 +25,19 @@ import type {
 export type LoopPhaseId = "context" | "plan" | "work" | "review" | "done";
 
 export interface LoopUpdate {
-  type: "phase" | "event" | "review" | "usage" | "subagent" | "output" | "final" | "error";
+  type:
+    | "phase"
+    | "event"
+    | "review"
+    | "usage"
+    | "subagent"
+    | "output"
+    | "agent"
+    | "brief"
+    | "command"
+    | "routing"
+    | "final"
+    | "error";
   phase?: LoopPhaseId;
   label?: string;
   event?: RunEvent;
@@ -33,6 +47,13 @@ export interface LoopUpdate {
   totalIterations?: number;
   stream?: "stdout" | "stderr";
   line?: string;
+  role?: RoleId;
+  text?: string;
+  command?: string;
+  strategy?: "direct" | "loop";
+  reason?: string;
+  agentKind?: "text" | "thought" | "tool" | "status" | "error";
+  content?: string;
   result?: OrchestratedResult;
   error?: string;
 }
@@ -119,6 +140,40 @@ export function parseUsageFromOutput(stdout: string): { tokens_in: number; token
  * can show real progress. In dry-run it simulates each phase with small delays;
  * in live mode it spawns the worker adapter and streams its output.
  */
+function buildWorkerBrief(options: {
+  task: string;
+  iteration: number;
+  totalIterations: number;
+  planText: string;
+  contextSummary?: string;
+  direct?: boolean;
+}): string {
+  const lines = [
+    `Task: ${options.task.trim()}`,
+    "",
+    options.direct
+      ? "Execute this operational task directly in the repository."
+      : `Worker iteration ${options.iteration}/${options.totalIterations}.`,
+    options.direct
+      ? "- Inspect git status, run the required shell commands, and report each step."
+      : "- Implement the task; run tests/validators when appropriate.",
+    "- State what you changed and the outcome of each command.",
+    "",
+    `Orchestrator plan: ${options.planText}`,
+  ];
+  if (options.contextSummary) {
+    lines.push("", "Repository context:", options.contextSummary);
+  }
+  return lines.join("\n");
+}
+
+function contextSummary(pack?: ContextPack): string | undefined {
+  if (!pack || pack.files.length === 0) return undefined;
+  const names = pack.files.slice(0, 8).map((f) => f.path);
+  const more = pack.files.length > names.length ? ` (+${pack.files.length - names.length} more)` : "";
+  return `${names.join(", ")}${more}`;
+}
+
 export async function runOrchestratedLoop(
   options: RunLoopOptions,
 ): Promise<OrchestratedResult> {
@@ -141,14 +196,28 @@ export async function runOrchestratedLoop(
   };
   const pushUsage = () => emit({ type: "usage", usage: structuredClone(usage) });
 
+  const { task: cleanedTask } = parseTaskOverride(options.task);
+  const route = routeTask(options.task, config.worker.loop_policy);
+  emit({ type: "routing", strategy: route.strategy, reason: route.reason });
+
   const { commands, roles } = buildRoleCommands({
     config,
     detections: options.detections,
-    task: options.task,
-    architectPrompt: `${config.architect.system_prompt_hint}\n\nTask:\n${options.task.trim()}`,
+    task: cleanedTask,
+    architectPrompt: `${config.architect.system_prompt_hint}\n\nTask:\n${cleanedTask}`,
   });
+  const architectCommand = commands.find((c) => c.phase === "architect");
   const workerCommand = commands.find((c) => c.phase === "worker");
   const live = shouldExecuteLive(config, mode, roles.worker.available && !!workerCommand);
+
+  if (architectCommand) {
+    emit({
+      type: "brief",
+      role: "orchestrator",
+      text: cleanedTask,
+    });
+    emit({ type: "command", role: "orchestrator", command: architectCommand.shell });
+  }
 
   // Phase: context
   emit({ type: "phase", phase: "context", label: "Packing repository context" });
@@ -179,11 +248,16 @@ export async function runOrchestratedLoop(
 
   let iterationsRun = 0;
   let status: "completed" | "failed" = "completed";
+  let lastWorkerOk = true;
+  const workerWarnings: string[] = [];
+  const direct = route.strategy === "direct";
+  const maxIterations = direct ? 1 : config.worker.max_iterations;
+  const packSummary = contextSummary(options.contextPack);
 
   if (mode === "plan") {
     emit({ type: "phase", phase: "done", label: "Plan-only mode: workers not run" });
   } else {
-    for (let i = 1; i <= config.worker.max_iterations; i++) {
+    for (let i = 1; i <= maxIterations; i++) {
       if (options.signal?.aborted) {
         status = "failed";
         break;
@@ -191,13 +265,28 @@ export async function runOrchestratedLoop(
       iterationsRun = i;
 
       // Phase: work (worker / sub-agent)
+      const workerBrief = buildWorkerBrief({
+        task: cleanedTask,
+        iteration: i,
+        totalIterations: maxIterations,
+        planText,
+        contextSummary: packSummary,
+        direct,
+      });
+
       emit({
         type: "phase",
         phase: "work",
-        label: `Worker iteration ${i}/${config.worker.max_iterations} (${roles.worker.model})`,
+        label: direct
+          ? `Worker direct pass (${roles.worker.model})`
+          : `Worker iteration ${i}/${maxIterations} (${roles.worker.model})`,
         iteration: i,
-        totalIterations: config.worker.max_iterations,
+        totalIterations: maxIterations,
       });
+      emit({ type: "brief", role: "worker", text: workerBrief });
+      if (workerCommand) {
+        emit({ type: "command", role: "worker", command: workerCommand.shell });
+      }
 
       if (config.subagents.enabled) {
         usage.subagents_spawned += 1;
@@ -210,14 +299,25 @@ export async function runOrchestratedLoop(
       let workerOut: number;
 
       if (live && workerCommand) {
-        const result = await runWorkerProcess(workerCommand, options, execute, emit);
+        const liveCommand = {
+          ...workerCommand,
+          argv: [...workerCommand.argv.slice(0, -1), workerBrief],
+        };
+        const result = await runWorkerProcess(liveCommand, options, execute, emit);
         const parsed = parseUsageFromOutput(result.stdout);
         workerIn = parsed.tokens_in;
         workerOut = parsed.tokens_out;
+        lastWorkerOk = result.ok;
         workerMessage = result.ok
-          ? `Worker iteration ${i}: completed (exit ${result.exitCode})`
-          : `Worker iteration ${i}: failed (${result.timedOut ? "timeout" : `exit ${result.exitCode}`})`;
-        if (!result.ok) status = "failed";
+          ? direct
+            ? `Worker: completed (exit ${result.exitCode})`
+            : `Worker iteration ${i}: completed (exit ${result.exitCode})`
+          : direct
+            ? `Worker: failed (${result.timedOut ? "timeout" : `exit ${result.exitCode}`})`
+            : `Worker iteration ${i}: failed (${result.timedOut ? "timeout" : `exit ${result.exitCode}`})`;
+        if (!result.ok) {
+          workerWarnings.push(workerMessage);
+        }
       } else {
         workerMessage = `Worker iteration ${i}/${config.worker.max_iterations}: simulated implementation pass.`;
         workerIn = estimateTokens(planText);
@@ -241,9 +341,14 @@ export async function runOrchestratedLoop(
       }
       pushUsage();
 
+      if (direct) {
+        status = lastWorkerOk ? "completed" : "failed";
+        break;
+      }
+
       // Phase: review (orchestrator)
       emit({ type: "phase", phase: "review", label: `Orchestrator reviewing iteration ${i}` });
-      const review = createSimulatedReview(i, config, config.worker.max_iterations);
+      const review = createSimulatedReview(i, config, maxIterations);
       const validation = validateArchitectReview(review, config.architect.review_schema_version);
       if (!validation.valid && config.architect.require_valid_reviews) {
         status = "failed";
@@ -267,6 +372,17 @@ export async function runOrchestratedLoop(
       await delay(stepDelay);
 
       if (config.worker.stop_on_first_pass && review.verdict === "pass") break;
+    }
+
+    if (!direct) {
+      const finalReview = reviews.at(-1);
+      status = lastWorkerOk && finalReview?.verdict === "pass" ? "completed" : "failed";
+    }
+    if (workerWarnings.length > 0 && status === "completed") {
+      emit({
+        type: "error",
+        error: `Completed with warnings: ${workerWarnings.join("; ")}`,
+      });
     }
   }
 
@@ -324,6 +440,13 @@ async function runWorkerProcess(
     timeoutMs: options.config.worker.iteration_timeout_ms,
     signal: options.signal,
     onLine: (stream, line) => {
+      const chunks = parseAgentOutputLine(line);
+      if (chunks.length > 0) {
+        for (const chunk of chunks) {
+          emit({ type: "agent", agentKind: chunk.kind, content: chunk.content });
+        }
+        return;
+      }
       if (line.trim()) emit({ type: "output", stream, line });
     },
   });
@@ -346,6 +469,7 @@ function buildReport(input: {
     "# OLAP Run Report",
     "",
     `Task: ${input.task.trim()}`,
+    `- Strategy: ${input.config.worker.loop_policy}`,
     "",
     "## Roles",
     "",

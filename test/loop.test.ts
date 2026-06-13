@@ -90,6 +90,20 @@ describe("runOrchestratedLoop (dry-run)", () => {
 });
 
 describe("runOrchestratedLoop (live)", () => {
+  it("routes operational tasks to a single direct worker pass", async () => {
+    const result = await runOrchestratedLoop({
+      task: "so publish this now",
+      config: cfg((c) => (c.ui.mode = "build")),
+      cwd: process.cwd(),
+      detections: NO_DETECTIONS,
+      delay: NO_DELAY,
+    });
+    expect(result.reviews.length).toBe(0);
+    expect(result.summary.iterations).toBe(1);
+    expect(result.usage.worker.calls).toBe(1);
+    expect(result.usage.orchestrator.calls).toBe(1);
+  });
+
   it("spawns the worker via the injected executor and records its usage", async () => {
     const detections: AdapterDetection[] = [
       { id: "grok", detected: true, binary: "/bin/grok" },
@@ -117,11 +131,12 @@ describe("runOrchestratedLoop (live)", () => {
 
     const updates: LoopUpdate[] = [];
     const result = await runOrchestratedLoop({
-      task: "do work",
+      task: "implement the feature",
       config: cfg((c) => {
         c.access.execution = "live";
         c.ui.mode = "build";
         c.worker.max_iterations = 1;
+        c.worker.loop_policy = "always";
       }),
       cwd: process.cwd(),
       detections,
@@ -134,6 +149,44 @@ describe("runOrchestratedLoop (live)", () => {
     expect(result.executed).toBe(true);
     expect(result.usage.worker.tokens_in).toBe(40);
     expect(result.usage.worker.tokens_out).toBe(60);
-    expect(updates.some((u) => u.type === "output")).toBe(true);
+    expect(updates.some((u) => u.type === "agent" || u.type === "output")).toBe(true);
+  });
+
+  it("marks completed when the final worker pass and review succeed after an earlier failure", async () => {
+    let call = 0;
+    const fakeExecute = async (): Promise<ExecResult> => {
+      call += 1;
+      return {
+        ok: call !== 1,
+        exitCode: call === 1 ? 1 : 0,
+        signal: null,
+        stdout: "",
+        stderr: "",
+        timedOut: call === 1,
+        durationMs: 1,
+      };
+    };
+
+    const result = await runOrchestratedLoop({
+      task: "implement retry flow",
+      config: cfg((c) => {
+        c.access.execution = "live";
+        c.ui.mode = "build";
+        c.worker.max_iterations = 3;
+        c.worker.loop_policy = "always";
+      }),
+      cwd: process.cwd(),
+      detections: [
+        { id: "grok", detected: true, binary: "/bin/grok" },
+        { id: "claude", detected: false },
+        { id: "gemini", detected: false },
+        { id: "codex", detected: false },
+      ],
+      delay: NO_DELAY,
+      execute: fakeExecute as never,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(call).toBe(3);
   });
 });

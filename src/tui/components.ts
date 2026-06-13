@@ -242,10 +242,15 @@ export type ConversationEntry =
   | { kind: "user"; text: string }
   | { kind: "event"; event: RunEvent }
   | { kind: "note"; text: string; tone: "info" | "success" | "warn" | "error" | "dim" }
+  | { kind: "routing"; strategy: "direct" | "loop"; reason: string }
+  | { kind: "brief"; role: "orchestrator" | "worker"; text: string }
+  | { kind: "command"; role: "orchestrator" | "worker"; command: string }
+  | { kind: "agent"; agentKind: "text" | "thought" | "tool" | "status" | "error"; content: string }
   | { kind: "output"; stream: "stdout" | "stderr"; line: string }
   | { kind: "review"; review: ArchitectReview };
 
 const MAX_ENTRIES = 500;
+const MAX_VISIBLE_LINES = 48;
 
 /** Scrolling transcript of prompts, loop events, worker output, and reviews, with a live status row. */
 export class ConversationComponent implements Component {
@@ -285,6 +290,25 @@ export class ConversationComponent implements Component {
 
   addOutput(stream: "stdout" | "stderr", line: string): void {
     this.push({ kind: "output", stream, line });
+  }
+
+  addRouting(strategy: "direct" | "loop", reason: string): void {
+    this.push({ kind: "routing", strategy, reason });
+  }
+
+  addBrief(role: "orchestrator" | "worker", text: string): void {
+    this.push({ kind: "brief", role, text });
+  }
+
+  addCommand(role: "orchestrator" | "worker", command: string): void {
+    this.push({ kind: "command", role, command });
+  }
+
+  addAgent(
+    agentKind: "text" | "thought" | "tool" | "status" | "error",
+    content: string,
+  ): void {
+    this.push({ kind: "agent", agentKind, content });
   }
 
   addReview(review: ArchitectReview): void {
@@ -353,6 +377,44 @@ export class ConversationComponent implements Component {
                   : t.dim;
         return wrap(entry.text, width, 2).map((line) => truncateToWidth(`  ${style(line)}`, width));
       }
+      case "routing": {
+        const mode = entry.strategy === "direct" ? t.info("direct") : t.accent("loop");
+        const head = `  ${t.dim("route")} ${mode} ${t.dim("—")} ${t.dim(entry.reason)}`;
+        return [truncateToWidth(head, width)];
+      }
+      case "brief": {
+        const roleStyle = entry.role === "orchestrator" ? t.orchestrator : t.worker;
+        const tag = roleStyle(entry.role === "orchestrator" ? "◆ orch brief" : "◇ wrk brief");
+        const head = `  ${tag}`;
+        const body = wrap(entry.text, width, 4).map((line) =>
+          truncateToWidth(`    ${t.text(line)}`, width),
+        );
+        return [truncateToWidth(head, width), ...body];
+      }
+      case "command": {
+        const roleStyle = entry.role === "orchestrator" ? t.orchestrator : t.worker;
+        const tag = roleStyle(entry.role === "orchestrator" ? "◆ orch cmd" : "◇ wrk cmd");
+        const cmd = entry.command.length > width - 12
+          ? `${entry.command.slice(0, Math.max(0, width - 15))}...`
+          : entry.command;
+        return [truncateToWidth(`  ${tag} ${t.faint(cmd)}`, width)];
+      }
+      case "agent": {
+        const prefix =
+          entry.agentKind === "thought"
+            ? t.faint("    thought ")
+            : entry.agentKind === "tool"
+              ? t.accent2("    tool ")
+              : entry.agentKind === "error"
+                ? t.error("    error ")
+                : entry.agentKind === "status"
+                  ? t.dim("    status ")
+                  : t.worker("    wrk ");
+        const body = wrap(entry.content, width, 8).map((line, i) =>
+          truncateToWidth(i === 0 ? `${prefix}${t.text(line)}` : `          ${t.text(line)}`, width),
+        );
+        return body.length > 0 ? body : [truncateToWidth(prefix, width)];
+      }
       case "output": {
         const style = entry.stream === "stderr" ? t.warn : t.faint;
         return [truncateToWidth(`    ${style("│")} ${style(entry.line)}`, width)];
@@ -378,15 +440,21 @@ export class ConversationComponent implements Component {
     for (const entry of this.entries) {
       lines.push(...this.renderEntry(entry, width));
     }
+    const tail =
+      lines.length > MAX_VISIBLE_LINES ? lines.slice(-MAX_VISIBLE_LINES) : lines;
+    const clipped = lines.length > tail.length;
+    const out = clipped
+      ? [truncateToWidth(this.theme.dim(`  … ${lines.length - tail.length} earlier lines hidden`), width), ...tail]
+      : tail;
     if (this.running) {
       const t = this.theme;
       const elapsed = this.startedAt > 0 ? formatDuration(Date.now() - this.startedAt) : "";
       const spin = t.spinner(spinnerFrame(this.frame));
       const label = t.text(this.phaseLabel || "Working");
       const time = elapsed ? t.faint(`(${elapsed})`) : "";
-      lines.push(truncateToWidth(`  ${spin} ${label} ${time}`, width));
+      out.push(truncateToWidth(`  ${spin} ${label} ${time}`, width));
     }
-    return lines;
+    return out;
   }
 }
 

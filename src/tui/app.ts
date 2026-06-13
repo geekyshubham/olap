@@ -329,6 +329,22 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       case "output":
         if (update.line) conversation.addOutput(update.stream ?? "stdout", update.line);
         break;
+      case "routing":
+        if (update.strategy && update.reason) {
+          conversation.addRouting(update.strategy, update.reason);
+        }
+        break;
+      case "brief":
+        if (update.role && update.text) conversation.addBrief(update.role, update.text);
+        break;
+      case "command":
+        if (update.role && update.command) conversation.addCommand(update.role, update.command);
+        break;
+      case "agent":
+        if (update.agentKind && update.content) {
+          conversation.addAgent(update.agentKind, update.content);
+        }
+        break;
       case "subagent":
       case "usage":
         if (update.usage) {
@@ -380,7 +396,10 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         runId,
         sessionId,
       });
-      if (result.reviews.at(-1)?.verdict === "pass") {
+      const passed =
+        result.status === "completed" &&
+        (result.reviews.length === 0 || result.reviews.at(-1)?.verdict === "pass");
+      if (passed) {
         await completeSession(cwd, sessionId, "completed");
       }
       await writeRunArtifacts({

@@ -17,6 +17,14 @@ export type SandboxPolicy = "read-only" | "workspace-write" | "danger-full-acces
 /** Whether the worker phase actually spawns processes or stays simulated. */
 export type ExecutionMode = "dry-run" | "live";
 
+/**
+ * When to run the full orchestrator/worker review loop vs a single direct worker pass.
+ * - auto: route from task keywords (/direct and /loop override)
+ * - always: always run the review loop
+ * - never: always run one worker pass (no simulated reviews)
+ */
+export type LoopPolicy = "auto" | "always" | "never";
+
 export interface AdapterSpec {
   id: AdapterId;
   binaries: string[];
@@ -105,6 +113,8 @@ export interface OlapConfig {
     dry_run: boolean;
     iteration_timeout_ms: number;
     stop_on_first_pass: boolean;
+    /** How often to use the architect/worker review loop vs a single worker pass. */
+    loop_policy: LoopPolicy;
   };
   modules: OlapModuleConfig[];
   validators: ValidatorConfig[];

@@ -46,6 +46,7 @@ export const DEFAULT_CONFIG: OlapConfig = {
     dry_run: true,
     iteration_timeout_ms: 300_000,
     stop_on_first_pass: false,
+    loop_policy: "auto",
   },
   modules: [],
   validators: [

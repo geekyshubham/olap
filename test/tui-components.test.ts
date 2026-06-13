@@ -185,6 +185,20 @@ describe("TUI components", () => {
     expect(lines.join("\n")).toContain("dry-run");
   });
 
+  it("renders routing, briefs, and parsed agent output", () => {
+    const convo = new ConversationComponent(theme);
+    convo.addRouting("direct", "operational task");
+    convo.addBrief("worker", "Task: publish\n\nExecute directly.");
+    convo.addAgent("text", "Running npm publish");
+    convo.addAgent("thought", "Checking git status");
+    const lines = convo.render(100);
+    assertWithinWidth(lines, 100);
+    expect(lines.join("\n")).toContain("direct");
+    expect(lines.join("\n")).toContain("wrk brief");
+    expect(lines.join("\n")).toContain("npm publish");
+    expect(lines.join("\n")).toContain("thought");
+  });
+
   it("renders help overlay and banner", () => {
     const help = new HelpOverlayComponent(theme).render(80);
     assertWithinWidth(help, 80);

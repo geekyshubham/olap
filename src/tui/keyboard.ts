@@ -50,6 +50,8 @@ export const HELP_LINES = [
   "",
   "The orchestrator plans and reviews; the worker writes the code.",
   "Choose a model for each role, pick a mode, and run a task.",
+  "Operational tasks (publish, push, deploy) run direct by default.",
+  "Prefix /direct or /loop to force a strategy.",
   "",
   "Commands:",
   "  /settings   Models, theme, mode, access control",
