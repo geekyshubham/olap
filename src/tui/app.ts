@@ -101,7 +101,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     const bannerRows = banner.chromeRowCount(terminal.columns);
     const contextBarRows = 1;
     const usageRows = usage.chromeRowCount();
-    const editorRows = 2;
+    const editorRows = 3;
     const footerRows = 1;
     return bannerRows + contextBarRows + usageRows + editorRows + footerRows;
   };
