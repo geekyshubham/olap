@@ -25,7 +25,7 @@ import { validateArchitectReview } from "../validators/review-schema.js";
 import { isAbortedStopReason } from "./agent-output.js";
 import { createAgentStream } from "./agent-stream.js";
 import { executeCommand, type ExecResult } from "./executor.js";
-import { extractPlanText, extractReview } from "./orchestrator.js";
+import { extractPlanText, extractReview, findJsonObjects } from "./orchestrator.js";
 import { buildPlanPrompt, buildReviewPrompt, buildWorkerPrompt, type ContextBlock } from "./prompts.js";
 import { parseTaskOverride, routeTask } from "./routing.js";
 import { estimateUsageCost, formatCostSummary } from "./cost.js";
@@ -185,8 +185,30 @@ export function shouldRunOrchestrator(orchestratorAvailable: boolean): boolean {
   return orchestratorAvailable;
 }
 
+function usageFromJsonValue(parsed: Record<string, unknown>): { tokens_in: number; tokens_out: number } | undefined {
+  const usage = (parsed.usage ?? parsed) as Record<string, unknown>;
+  const inTok =
+    Number(usage.input_tokens ?? usage.prompt_tokens ?? usage.tokens_in ?? 0) || 0;
+  const outTok =
+    Number(usage.output_tokens ?? usage.completion_tokens ?? usage.tokens_out ?? 0) || 0;
+  if (inTok > 0 || outTok > 0) {
+    return { tokens_in: inTok, tokens_out: outTok };
+  }
+  return undefined;
+}
+
 /** Best-effort extraction of token usage from a worker CLI's JSON output. */
 export function parseUsageFromOutput(stdout: string): { tokens_in: number; tokens_out: number } {
+  // Prefer the last embedded object with usage (CLIs may log before the final JSON blob).
+  for (const obj of findJsonObjects(stdout).reverse()) {
+    try {
+      const hit = usageFromJsonValue(JSON.parse(obj) as Record<string, unknown>);
+      if (hit) return hit;
+    } catch {
+      // keep scanning
+    }
+  }
+
   const lines = stdout
     .split("\n")
     .map((line) => line.trim())
@@ -195,15 +217,8 @@ export function parseUsageFromOutput(stdout: string): { tokens_in: number; token
   for (const line of lines) {
     if (!line.startsWith("{") && !line.startsWith("[")) continue;
     try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      const usage = (parsed.usage ?? parsed) as Record<string, unknown>;
-      const inTok =
-        Number(usage.input_tokens ?? usage.prompt_tokens ?? usage.tokens_in ?? 0) || 0;
-      const outTok =
-        Number(usage.output_tokens ?? usage.completion_tokens ?? usage.tokens_out ?? 0) || 0;
-      if (inTok > 0 || outTok > 0) {
-        return { tokens_in: inTok, tokens_out: outTok };
-      }
+      const hit = usageFromJsonValue(JSON.parse(line) as Record<string, unknown>);
+      if (hit) return hit;
     } catch {
       // not JSON; keep scanning
     }
@@ -337,7 +352,7 @@ export async function runOrchestratedLoop(
     ? 1
     : route.complexity === "moderate"
       ? Math.max(1, Math.min(2, config.worker.max_iterations))
-      : config.worker.max_iterations;
+      : Math.max(1, config.worker.max_iterations);
 
   // Phase: plan (orchestrator)
   emit({ type: "phase", phase: "plan", label: `Orchestrator planning (${roles.orchestrator.model})` });

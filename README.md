@@ -37,7 +37,7 @@ OLAP splits the AI coding pipeline into two independent roles:
 
 | Role | Job | Recommended Model Type |
 |---|---|---|
-| **Orchestrator** | Plans the work, reviews the output, coordinates sub-agents | Capable reasoning models (e.g., Claude Sonnet, Gemini Pro, Grok Composer) |
+| **Orchestrator** | Plans the work and reviews the output | Capable reasoning models (e.g., Claude Sonnet, Gemini Pro, Grok Composer) |
 | **Worker** | Implements the code, edits files, runs commands, runs tests | Cheap, fast, or high-concurrency models (e.g., Gemini Flash, Codex Mini) |
 
 You configure each role independently. The orchestrator stays lean — it thinks and delegates. The worker stays cheap — it builds. The result: **frontier-quality planning at a fraction of the cost.**
@@ -127,7 +127,7 @@ A Warp-inspired terminal interface shows you exactly what is happening at every 
 - **Working →** worker is implementing code
 - **Reviewing →** orchestrator is validating output
 
-Live token counters for both orchestrator and worker, sub-agent call counts, and iteration state are visible throughout every run.
+Live token counters for both orchestrator and worker, context-pack coverage, and iteration state are visible throughout every run.
 
 ### TUI Pre-Run Confirmation & Run Plan Preview
 Shows a confirmation overlay before starting work with strategy, roles, stop conditions, and iteration cap derived from the same routing logic as the loop. 
@@ -260,8 +260,8 @@ access:
   sandbox: workspace-write
   network: false
 subagents:
-  enabled: true
-  max_parallel: 3
+  enabled: false
+  max_parallel: 1
 architect:
   context_pack_max_tokens: 32000
 worker:

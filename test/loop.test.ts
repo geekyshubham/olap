@@ -134,6 +134,19 @@ describe("parseUsageFromOutput", () => {
     const usage = parseUsageFromOutput("just some text output");
     expect(usage).toEqual({ tokens_in: 0, tokens_out: 0 });
   });
+
+  it("extracts usage from pretty-printed JSON split across lines", () => {
+    const pretty = [
+      "{",
+      '  "text": "done",',
+      '  "usage": {',
+      '    "input_tokens": 15,',
+      '    "output_tokens": 25',
+      "  }",
+      "}",
+    ].join("\n");
+    expect(parseUsageFromOutput(pretty)).toEqual({ tokens_in: 15, tokens_out: 25 });
+  });
 });
 
 describe("runOrchestratedLoop", () => {
@@ -596,45 +609,50 @@ describe("runOrchestratedLoop", () => {
     expect(result.status).toBe("completed");
   });
 
-  it("fails when require_valid_reviews is true and review JSON is missing", async () => {
-    const calls: AdapterCommand[] = [];
-    const execute = async (command: AdapterCommand, options: ExecOptions): Promise<ExecResult> => {
-      calls.push(command);
-      if (command.phase === "worker") {
-        const stdout = JSON.stringify({
-          text: "Edited.",
-          stopReason: "EndTurn",
-          usage: { input_tokens: 10, output_tokens: 20 },
-        });
-        options.onLine?.("stdout", stdout);
-        return mkResult({ ok: true, stdout });
-      }
-      if (command.step === "review") {
-        options.onLine?.("stdout", "not json at all");
-        return mkResult({ ok: true, stdout: "not json at all" });
-      }
-      const plan = JSON.stringify({ text: "Brief: edit file." });
-      options.onLine?.("stdout", plan);
-      return mkResult({ ok: true, stdout: plan });
-    };
-    const result = await runOrchestratedLoop({
-      task: "implement the feature",
-      config: cfg((c) => {
-        c.ui.mode = "build";
-        c.worker.max_iterations = 1;
-        c.worker.loop_policy = "always";
-        c.architect.require_valid_reviews = true;
-      }),
-      cwd: process.cwd(),
-      detections: GROK_DETECTED,
-      delay: NO_DELAY,
-      execute: execute as unknown as typeof import("../src/run/executor.js").executeCommand,
-      getRunDiff: async () => SOME_DIFF,
-      getChangeSignature: changingSignature(),
-    });
-    expect(result.status).toBe("failed");
-    expect(result.reviews.at(-1)?.verdict).toBe("fail");
-  });
+  it.each([true, false])(
+    "fails when orchestrator emits no schema-valid review JSON (require_valid_reviews=%s)",
+    async (requireValidReviews) => {
+      const calls: AdapterCommand[] = [];
+      const execute = async (command: AdapterCommand, options: ExecOptions): Promise<ExecResult> => {
+        calls.push(command);
+        if (command.phase === "worker") {
+          const stdout = JSON.stringify({
+            text: "Edited.",
+            stopReason: "EndTurn",
+            usage: { input_tokens: 10, output_tokens: 20 },
+          });
+          options.onLine?.("stdout", stdout);
+          return mkResult({ ok: true, stdout });
+        }
+        if (command.step === "review") {
+          options.onLine?.("stdout", "not json at all");
+          return mkResult({ ok: true, stdout: "not json at all" });
+        }
+        const plan = JSON.stringify({ text: "Brief: edit file." });
+        options.onLine?.("stdout", plan);
+        return mkResult({ ok: true, stdout: plan });
+      };
+      const result = await runOrchestratedLoop({
+        task: "implement the feature",
+        config: cfg((c) => {
+          c.ui.mode = "build";
+          c.worker.max_iterations = 1;
+          c.worker.loop_policy = "always";
+          c.architect.require_valid_reviews = requireValidReviews;
+        }),
+        cwd: process.cwd(),
+        detections: GROK_DETECTED,
+        delay: NO_DELAY,
+        execute: execute as unknown as typeof import("../src/run/executor.js").executeCommand,
+        getRunDiff: async () => SOME_DIFF,
+        getChangeSignature: changingSignature(),
+      });
+      expect(result.status).toBe("failed");
+      expect(result.reviews.at(-1)?.verdict).toBe("fail");
+      expect(result.reviews.at(-1)?.summary).toContain("schema-valid review");
+      expect(calls.some((c) => c.step === "review")).toBe(true);
+    },
+  );
 
   it("fails loop-mode runs that complete with no file changes", async () => {
     const { execute } = recordingExecutor();

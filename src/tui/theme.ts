@@ -189,7 +189,9 @@ const THEME_REGISTRY = new Map<string, Theme>(
 
 let activeTheme: Theme = THEME_REGISTRY.get("olap-dark") ?? makeTheme(PALETTES[0]);
 
-export function getTheme(): Theme {
+/** Return the active theme, or look up a named theme without changing the active one. */
+export function getTheme(name?: string): Theme {
+  if (name) return getThemeByName(name) ?? activeTheme;
   return activeTheme;
 }
 

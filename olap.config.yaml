@@ -36,8 +36,8 @@ access:
   sandbox: workspace-write
   network: false
 subagents:
-  enabled: true
-  max_parallel: 3
+  enabled: false
+  max_parallel: 1
 architect:
   output_budget_tokens: 4096
   context_pack_max_tokens: 32000

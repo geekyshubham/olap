@@ -4,6 +4,7 @@ import {
   matchesKey,
   ProcessTerminal,
   TUI,
+  type Component,
   type OverlayHandle,
 } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
@@ -134,6 +135,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   let frame = 0;
   let spinnerTimer: NodeJS.Timeout | undefined;
   let activeOverlay: { handle: OverlayHandle; kind: "help" | "interactive" | "confirm" } | undefined;
+  let activeOverlayComponent: (Component & { setTheme?: (t: Theme) => void }) | undefined;
   let abortController: AbortController | undefined;
   let pendingTask: string | undefined;
   let cancelledByUser = false;
@@ -168,6 +170,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     const overlay = new RunPlanOverlay(plan, theme);
     const handle = tui.showOverlay(overlay, { width: "72%", maxHeight: "70%", minWidth: 48 });
     activeOverlay = { handle, kind: "confirm" };
+    activeOverlayComponent = overlay;
     pendingTask = task;
     dimChrome();
     tui.requestRender();
@@ -208,6 +211,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     // background dimmed; otherwise apply the full theme to the chrome.
     setChromeTheme(activeOverlay ? mutedThemeFor(theme) : theme);
     help.setTheme(theme);
+    activeOverlayComponent?.setTheme?.(theme);
     tui.requestRender();
   };
 
@@ -219,6 +223,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     if (!activeOverlay) return;
     activeOverlay.handle.hide();
     activeOverlay = undefined;
+    activeOverlayComponent = undefined;
     restoreChrome();
     tui.setFocus(editor);
     tui.requestRender();
@@ -248,6 +253,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     );
     const handle = tui.showOverlay(panel, { width: "72%", maxHeight: "82%", minWidth: 48 });
     activeOverlay = { handle, kind: "interactive" };
+    activeOverlayComponent = panel;
     dimChrome();
     tui.requestRender();
   };
@@ -270,6 +276,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     const panel = new OverlayPanel(`Select ${role} model (${adapter})`, list, theme);
     const handle = tui.showOverlay(panel, { width: "60%", maxHeight: "70%", minWidth: 44 });
     activeOverlay = { handle, kind: "interactive" };
+    activeOverlayComponent = panel;
     dimChrome();
     tui.requestRender();
   };
@@ -278,6 +285,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     closeOverlay();
     const handle = tui.showOverlay(help, { width: "76%", maxHeight: "80%", minWidth: 48 });
     activeOverlay = { handle, kind: "help" };
+    activeOverlayComponent = help;
     dimChrome();
     tui.requestRender();
   };
@@ -452,11 +460,17 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       case "command":
         if (update.role && update.command) conversation.addCommand(update.role, update.command);
         break;
-      case "agent":
+      case "agent": {
         if (update.agentKind && update.content) {
-          conversation.addAgent(update.agentKind, update.content);
+          const orchPrefix = update.content.startsWith("◆ ");
+          conversation.addAgent(
+            update.agentKind,
+            orchPrefix ? update.content.slice(2) : update.content,
+            update.role ?? (orchPrefix ? "orchestrator" : "worker"),
+          );
         }
         break;
+      }
       case "activity":
         if (update.activity) {
           const { tool, file } = update.activity;
@@ -478,11 +492,6 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         }
         break;
       case "usage":
-        if (update.usage) {
-          usage.update({ usage: update.usage, cost: update.cost });
-          conversation.setReservedRows(reservedRows());
-        }
-        break;
       case "final":
         if (update.usage) {
           usage.update({ usage: update.usage, cost: update.cost });

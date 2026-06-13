@@ -217,7 +217,12 @@ export type ConversationEntry =
   | { kind: "routing"; strategy: "direct" | "loop"; reason: string }
   | { kind: "brief"; role: "orchestrator" | "worker"; text: string }
   | { kind: "command"; role: "orchestrator" | "worker"; command: string }
-  | { kind: "agent"; agentKind: "text" | "thought" | "tool" | "status" | "error"; content: string }
+  | {
+      kind: "agent";
+      agentKind: "text" | "thought" | "tool" | "status" | "error";
+      role: "orchestrator" | "worker";
+      content: string;
+    }
   | { kind: "output"; stream: "stdout" | "stderr"; line: string }
   | { kind: "diff"; summary: DiffSummary }
   | { kind: "review"; review: ArchitectReview };
@@ -257,6 +262,8 @@ export class ConversationComponent implements Component {
   private rows: () => number;
   /** Current run id, used to link the full brief artifact. */
   private runId = "";
+  /** Last render width — used to anchor scroll when new lines arrive off-tail. */
+  private lastWidth = 80;
 
   constructor(theme?: Theme, options?: { rows?: () => number }) {
     this.theme = theme ?? getTheme();
@@ -268,10 +275,19 @@ export class ConversationComponent implements Component {
   }
 
   private push(entry: ConversationEntry): void {
+    const anchored = this.scrollOffset > 0;
+    const addedLines = anchored ? this.renderEntry(entry, this.lastWidth).length : 0;
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
-      this.entries.splice(0, this.entries.length - MAX_ENTRIES);
+      const overflow = this.entries.length - MAX_ENTRIES;
+      const removed = this.entries.splice(0, overflow);
+      if (anchored) {
+        let removedLines = 0;
+        for (const e of removed) removedLines += this.renderEntry(e, this.lastWidth).length;
+        this.scrollOffset = Math.max(0, this.scrollOffset - removedLines);
+      }
     }
+    if (anchored) this.scrollOffset += addedLines;
   }
 
   addUser(text: string): void {
@@ -308,8 +324,9 @@ export class ConversationComponent implements Component {
   addAgent(
     agentKind: "text" | "thought" | "tool" | "status" | "error",
     content: string,
+    role: "orchestrator" | "worker" = "worker",
   ): void {
-    this.push({ kind: "agent", agentKind, content });
+    this.push({ kind: "agent", agentKind, role, content });
     // Any agent output counts as liveness for stall detection.
     this.activityAt = Date.now();
     if (agentKind === "tool") this.activity = content;
@@ -492,9 +509,13 @@ export class ConversationComponent implements Component {
             truncateToWidth(i === 0 ? `    ${t.error("✗")} ${t.error(line)}` : `      ${t.error(line)}`, width),
           );
         }
-        const prefix = t.worker("    wrk ");
-        const body = wrap(entry.content, width, 8).map((line, i) =>
-          truncateToWidth(i === 0 ? `${prefix}${t.text(line)}` : `          ${t.text(line)}`, width),
+        const isOrch = entry.role === "orchestrator";
+        const prefix = isOrch ? t.orchestrator("    orch ") : t.worker("    wrk ");
+        const body = wrap(entry.content, width, isOrch ? 9 : 8).map((line, i) =>
+          truncateToWidth(
+            i === 0 ? `${prefix}${t.text(line)}` : `          ${t.text(line)}`,
+            width,
+          ),
         );
         return body.length > 0 ? body : [truncateToWidth(prefix, width)];
       }
@@ -532,6 +553,7 @@ export class ConversationComponent implements Component {
   }
 
   render(width: number): string[] {
+    this.lastWidth = width;
     const bodyLines: string[] = [];
     for (const entry of this.entries) {
       bodyLines.push(...this.renderEntry(entry, width));
@@ -856,6 +878,7 @@ export class OverlayPanel implements Component, Focusable {
 
   setTheme(theme: Theme): void {
     this.theme = theme;
+    (this.body as { setTheme?: (t: Theme) => void }).setTheme?.(theme);
   }
 
   setTitle(title: string): void {

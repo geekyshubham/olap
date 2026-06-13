@@ -1,4 +1,4 @@
-import { readConfig } from "../config/read.js";
+import { cloneConfig, readConfig } from "../config/read.js";
 import { detectAdapters } from "../adapters/detect.js";
 import { resolveConfigModels } from "../adapters/discover.js";
 import { defaultModelFor } from "../adapters/models.js";
@@ -53,9 +53,11 @@ export function parseRoleSpec(
   spec: string,
   role: RoleId,
 ): { adapter: AdapterId; model: string } | undefined {
-  const [adapterRaw, ...modelParts] = spec.split(":");
+  const trimmed = spec.trim();
+  if (!trimmed) return undefined;
+  const [adapterRaw, ...modelParts] = trimmed.split(":");
   const adapter = adapterRaw.trim() as AdapterId;
-  if (!ADAPTERS.includes(adapter)) return undefined;
+  if (!adapter || !ADAPTERS.includes(adapter)) return undefined;
   const model = modelParts.join(":").trim() || defaultModelFor(adapter, role);
   return { adapter, model };
 }
@@ -67,25 +69,33 @@ export interface RunOverrideResult {
 
 export function applyRunOverrides(config: OlapConfig, options: RunOptions): RunOverrideResult {
   const errors: string[] = [];
-  if (options.mode) {
-    if (MODES.includes(options.mode as WorkMode)) {
-      config.ui.mode = options.mode as WorkMode;
+  const out = cloneConfig(config);
+
+  if (options.mode !== undefined) {
+    const mode = options.mode.trim().toLowerCase();
+    if (!mode) {
+      errors.push(`Invalid --mode "${options.mode}" (expected plan, build, or workflow).`);
+    } else if (MODES.includes(mode as WorkMode)) {
+      out.ui.mode = mode as WorkMode;
     } else {
       errors.push(`Invalid --mode "${options.mode}" (expected plan, build, or workflow).`);
     }
   }
-  if (options.theme) config.ui.theme = options.theme;
-  if (options.orchestrator) {
+  if (options.theme !== undefined) {
+    const theme = options.theme.trim();
+    if (theme) out.ui.theme = theme;
+  }
+  if (options.orchestrator !== undefined) {
     const parsed = parseRoleSpec(options.orchestrator, "orchestrator");
-    if (parsed) config.roles.orchestrator = { ...config.roles.orchestrator, ...parsed };
+    if (parsed) out.roles.orchestrator = { ...out.roles.orchestrator, ...parsed };
     else errors.push(`Invalid --orchestrator "${options.orchestrator}" (expected adapter[:model]).`);
   }
-  if (options.worker) {
+  if (options.worker !== undefined) {
     const parsed = parseRoleSpec(options.worker, "worker");
-    if (parsed) config.roles.worker = { ...config.roles.worker, ...parsed };
+    if (parsed) out.roles.worker = { ...out.roles.worker, ...parsed };
     else errors.push(`Invalid --worker "${options.worker}" (expected adapter[:model]).`);
   }
-  return { config, errors };
+  return { config: out, errors };
 }
 
 function makePrinter(quiet: boolean): (update: LoopUpdate) => void {

@@ -121,7 +121,9 @@ describe("E2E CLI", () => {
 
   it("completes build mode with fake grok and writes diff artifacts", async () => {
     const { dir, env } = await setupE2eRepo();
-    await writeFileInDir(dir, "src/smoke.ts", "export const smoke = false;\n");
+    // Leave a clean working tree — the fake worker edits src/smoke.ts during the run.
+    const smokeBefore = await readFile(join(dir, "src/smoke.ts"), "utf8");
+    expect(smokeBefore).toContain("true");
 
     const result = await runCli(
       ["run", "just fix smoke.ts no loops", "--mode", "build", "--quiet"],
@@ -131,18 +133,21 @@ describe("E2E CLI", () => {
     expect(result.stdout).toContain("completed");
     expect(result.stdout).toContain("Changes:");
 
+    const smokeAfter = await readFile(join(dir, "src/smoke.ts"), "utf8");
+    expect(smokeAfter).toContain("false");
+
     const runs = await readdir(join(dir, ".olap", "runs"));
     const latest = runs.sort().at(-1)!;
     const changes = JSON.parse(
       await readFile(join(dir, ".olap", "runs", latest, "changes.json"), "utf8"),
-    ) as { changed: boolean };
+    ) as { changed: boolean; files: Array<{ path: string }> };
     expect(changes.changed).toBe(true);
+    expect(changes.files.some((f) => f.path === "src/smoke.ts")).toBe(true);
   });
 
   it("runs workflow mode with injected passing validators", async () => {
     const { dir, env } = await setupE2eRepo();
     await setValidators(dir, "true");
-    await writeFileInDir(dir, "src/smoke.ts", "export const smoke = 2;\n");
 
     const result = await runCli(
       ["run", "update smoke.ts", "--mode", "workflow", "--quiet"],

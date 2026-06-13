@@ -33,6 +33,10 @@ lower="$(printf '%s' "$prompt" | tr '[:upper:]' '[:lower:]')"
 
 case "$lower" in
 *"you are the worker"*)
+  # Simulate a real worker edit when E2E repos include src/smoke.ts.
+  if [ -f src/smoke.ts ]; then
+    printf '%s\n' 'export const smoke = false;' >src/smoke.ts
+  fi
   printf '%s\n' '{"text":"Implemented the change.","stopReason":"EndTurn","usage":{"input_tokens":120,"output_tokens":80}}'
   ;;
 *"## worker exit"*|*"reviewing the worker"*)

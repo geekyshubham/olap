@@ -180,7 +180,7 @@ export interface ReviewExtraction {
   fromOrchestrator: boolean;
 }
 
-/** Parse orchestrator review output; fall back to a signal-derived review. */
+/** Parse orchestrator review output; derive a signal-based review only when tests need a fallback. */
 export function extractReview(
   stdout: string,
   derived: DerivedReviewInput,

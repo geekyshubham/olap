@@ -69,7 +69,7 @@ OLAP always spawns the configured orchestrator and worker CLIs when their adapte
 - all output is captured into `.olap/runs/<run-id>`
 - validators remain repo-defined commands (workflow mode)
 
-When the orchestrator review CLI exits successfully but does not print schema-valid review JSON, OLAP falls back to a signal-derived review (worker exit + diff). If `architect.require_valid_reviews` is true (default), the run fails instead of accepting the derived verdict.
+When the orchestrator review CLI exits successfully but does not print schema-valid review JSON, the run **fails**. OLAP does not infer a verdict from worker exit codes or diffs in live runs. `architect.require_valid_reviews` controls whether orchestrator-provided review JSON must pass schema validation; missing review JSON always fails regardless of that flag.
 
 ## Adding an Adapter
 

@@ -216,12 +216,15 @@ describe("TUI components", () => {
     convo.addRouting("direct", "operational task");
     convo.addBrief("worker", "Task: publish\n\nExecute directly.");
     convo.addAgent("text", "Running npm publish");
+    convo.addAgent("text", "Planning next steps", "orchestrator");
     convo.addAgent("thought", "Checking git status");
     const lines = convo.render(100);
     assertWithinWidth(lines, 100);
     expect(lines.join("\n")).toContain("direct");
     expect(lines.join("\n")).toContain("wrk brief");
     expect(lines.join("\n")).toContain("npm publish");
+    expect(lines.join("\n")).toContain("orch");
+    expect(lines.join("\n")).toContain("Planning next steps");
     expect(lines.join("\n")).toContain("thought");
   });
 
@@ -320,6 +323,18 @@ describe("transcript scrolling", () => {
     convo.render(80);
     expect(convo.canScroll()).toBe(false);
     expect(convo.scrollUp(1)).toBe(false);
+  });
+
+  it("keeps the scroll anchor when new lines arrive off-tail", () => {
+    const convo = bigConvo();
+    convo.render(80);
+    convo.pageUp();
+    const before = convo.render(80).join("\n");
+    expect(before).toContain("line-40");
+    convo.addUser("new-tail-line");
+    const after = convo.render(80).join("\n");
+    expect(after).toContain("line-40");
+    expect(after).not.toContain("new-tail-line");
   });
 });
 

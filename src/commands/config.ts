@@ -24,7 +24,7 @@ export function printConfig(config: OlapConfig, cwd = process.cwd()): void {
   console.log(`  sandbox    ${config.access.sandbox}`);
   console.log(`  network    ${config.access.network}`);
   console.log("");
-  console.log("Sub-agents");
+  console.log("Sub-agents (not implemented — settings are ignored at runtime)");
   console.log(`  enabled       ${config.subagents.enabled}`);
   console.log(`  max_parallel  ${config.subagents.max_parallel}`);
   console.log("");

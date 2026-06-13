@@ -20,6 +20,7 @@ describe("artifacts", () => {
     const cwd = await createTempDir();
     const runId = createRunId(new Date("2026-06-12T10:00:00.000Z"));
     const task = "Build OLAP CLI";
+    const config = { ...DEFAULT_CONFIG, ui: { ...DEFAULT_CONFIG.ui, mode: "plan" as const } };
     const execute = async (command: AdapterCommand, options: ExecOptions): Promise<ExecResult> => {
       const stdout =
         command.step === "plan"
@@ -40,7 +41,7 @@ describe("artifacts", () => {
 
     const { events, report } = await runOrchestratedLoop({
       task,
-      config: { ...DEFAULT_CONFIG, ui: { ...DEFAULT_CONFIG.ui, mode: "plan" } },
+      config,
       cwd,
       detections: GROK_DETECTED,
       delay: () => Promise.resolve(),
@@ -53,7 +54,7 @@ describe("artifacts", () => {
       cwd,
       runId,
       task,
-      config: DEFAULT_CONFIG,
+      config,
       events,
       report,
     });
@@ -78,5 +79,79 @@ describe("artifacts", () => {
     const reportText = await readFile(join(dir, "final-report.md"), "utf8");
     expect(reportText).toContain("Run Summary");
     expect(reportText).toContain("orchestrator and/or worker CLI processes finished successfully");
+
+    const configSnapshot = await readFile(join(dir, "config-snapshot.yaml"), "utf8");
+    expect(configSnapshot).toContain("mode: plan");
+  });
+
+  it("writes optional CLI artifacts when provided", async () => {
+    const cwd = await createTempDir();
+    const runId = createRunId(new Date("2026-06-12T10:00:00.000Z"));
+    const summary = {
+      run_id: runId,
+      session_id: "sess-1",
+      adapter: "grok",
+      iterations: 1,
+      reviews_valid: 1,
+      context_pack_tokens: 0,
+      cwd,
+      executed: true,
+      files_changed: 1,
+      worker_cancelled: false,
+      cost: {
+        estimated_usd: 0,
+        budget_usd: 0,
+        budget_exceeded: false,
+      },
+    };
+
+    const dir = await writeRunArtifacts({
+      cwd,
+      runId,
+      task: "Ship feature",
+      config: DEFAULT_CONFIG,
+      events: [],
+      report: "# Report\n",
+      brief: "Edit the module.",
+      reviews: [
+        {
+          schema_version: 1,
+          iteration: 1,
+          verdict: "pass",
+          summary: "Looks good.",
+          findings: [{ severity: "info", message: "ok" }],
+          next_actions: [],
+          token_budget_used: 12,
+        },
+      ],
+      adapterCommands: [
+        {
+          phase: "worker",
+          step: "implement",
+          executed: true,
+          argv: ["grok", "-p", "prompt"],
+        },
+      ],
+      summary,
+      diff: {
+        changed: true,
+        files: [{ path: "src/a.ts", insertions: 1, deletions: 0, binary: false }],
+        insertions: 1,
+        deletions: 0,
+      },
+    });
+
+    const files = (await readdir(dir)).sort();
+    expect(files).toEqual([
+      "adapter-commands.json",
+      "architect-reviews.jsonl",
+      "brief.md",
+      "changes.json",
+      "config-snapshot.yaml",
+      "events.jsonl",
+      "final-report.md",
+      "summary.json",
+      "task.md",
+    ]);
   });
 });

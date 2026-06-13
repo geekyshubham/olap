@@ -69,8 +69,8 @@ access:
   sandbox: workspace-write
   network: false
 subagents:
-  enabled: true
-  max_parallel: 3
+  enabled: false
+  max_parallel: 1
 architect:
   output_budget_tokens: 4096
   context_pack_max_tokens: 32000
@@ -130,10 +130,10 @@ Access settings are surfaced in the TUI and mapped into each adapter's real perm
 - `access.sandbox` — `read-only` | `workspace-write` | `danger-full-access`.
 - `access.network` — allow the worker network access (sandbox dependent).
 
-## Sub-agents
+## Sub-agents (reserved — not implemented)
 
-- `subagents.enabled` — spawn a worker sub-agent per iteration.
-- `subagents.max_parallel` — cap on concurrently active sub-agents (shown live in the usage panel).
+- `subagents.enabled` — reserved for future parallel worker sub-agents per iteration (ignored at runtime today).
+- `subagents.max_parallel` — reserved upper bound on concurrently active sub-agents (ignored at runtime today).
 
 ## Adapters (legacy selection)
 
@@ -156,7 +156,7 @@ Access settings are surfaced in the TUI and mapped into each adapter's real perm
 - `context_pack_max_tokens` bounds the generated context pack.
 - `review_schema_version` pins the expected structured review shape.
 - `system_prompt_hint` is a compact instruction sent to orchestrator phases.
-- `require_valid_reviews` controls whether review schema validity is required.
+- `require_valid_reviews` controls whether orchestrator-provided review JSON must pass schema validation. Missing review JSON always fails the run regardless of this flag.
 - `iteration_timeout_ms` bounds orchestrator plan/review CLI invocations.
 
 ## Worker

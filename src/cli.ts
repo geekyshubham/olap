@@ -28,6 +28,19 @@ interface RunCliOptions {
   quiet?: boolean;
 }
 
+function runCliAction<Args extends unknown[]>(
+  action: (...args: Args) => Promise<void>,
+): (...args: Args) => Promise<void> {
+  return async (...args: Args) => {
+    try {
+      await action(...args);
+    } catch (error: unknown) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  };
+}
+
 export function createCliProgram(deps: CliDependencies = {}): Command {
   const startTuiImpl = deps.startTui ?? startTui;
   const runToolCommandImpl = deps.runToolCommand ?? runToolCommand;
@@ -37,49 +50,49 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .name("olap")
     .description("OLAP orchestrated loop architect/worker CLI")
     .version(VERSION)
-    .action(async () => {
+    .action(runCliAction(async () => {
       await startTuiImpl();
-    });
+    }));
 
   program
     .command("init")
     .description("Write default olap.config.yaml")
-    .action(async () => {
+    .action(runCliAction(async () => {
       const path = await initCommand();
       console.log(`Wrote ${path}`);
-    });
+    }));
 
   program
     .command("adapters")
     .description("Detect grok, claude, gemini, codex, kiro, and ollama adapters on PATH")
-    .action(async () => {
+    .action(runCliAction(async () => {
       const detections = await adaptersCommand();
       printAdapters(detections, await readConfig());
-    });
+    }));
 
   program
     .command("models")
     .description("List known models per adapter and which roles use them")
-    .action(async () => {
+    .action(runCliAction(async () => {
       const listings = await modelsCommand();
       printModels(listings);
-    });
+    }));
 
   program
     .command("config")
-    .description("Print the resolved OLAP configuration (roles, ui, access, sub-agents)")
-    .action(async () => {
+    .description("Print the resolved OLAP configuration (roles, ui, access)")
+    .action(runCliAction(async () => {
       const config = await configCommand();
       printConfig(config);
-    });
+    }));
 
   program
     .command("modules")
     .description("List built-in and configured Pi-compatible modules")
-    .action(async () => {
+    .action(runCliAction(async () => {
       const modules = await modulesCommand();
       printModules(modules);
-    });
+    }));
 
   const addToolCommand = (name: ToolName, description: string): void => {
     program
@@ -87,13 +100,13 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
       .description(description)
       .allowUnknownOption(true)
       .argument("[args...]", `Arguments passed to ${name}`)
-      .action(async (args: string[] = []) => {
+      .action(runCliAction(async (args: string[] = []) => {
         const result = await runToolCommandImpl(name, args, { cwd: process.cwd() });
         printToolRunResult(result);
         if (!result.ok) {
           process.exitCode = result.exitCode ?? 1;
         }
-      });
+      }));
   };
 
   addToolCommand(
@@ -114,7 +127,7 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .option("--worker <adapter[:model]>", "Override worker role")
     .option("--theme <name>", "Theme to record for this run")
     .option("--quiet", "Suppress live event output")
-    .action(async (task: string, options: RunCliOptions) => {
+    .action(runCliAction(async (task: string, options: RunCliOptions) => {
       const runOptions: RunOptions = {
         mode: options.mode,
         orchestrator: options.orchestrator,
@@ -127,25 +140,25 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
       if (result.status !== "completed") {
         process.exitCode = 1;
       }
-    });
+    }));
 
   program
     .command("check")
     .description("Run validators from olap.config.yaml")
-    .action(async () => {
+    .action(runCliAction(async () => {
       const results = await checkCommand();
       const ok = printCheckResults(results);
       if (!ok) {
         process.exitCode = 1;
       }
-    });
+    }));
 
   program
     .command("tui")
     .description("Open the interactive terminal UI")
-    .action(async () => {
+    .action(runCliAction(async () => {
       await startTuiImpl();
-    });
+    }));
 
   return program;
 }

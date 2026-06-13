@@ -1,5 +1,5 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { ContextPack, ContextPackFile, OlapConfig } from "../types.js";
 
 const DEFAULT_PATHS = [
@@ -63,12 +63,32 @@ export function renderContextExcerpt(
   return sections.join("\n\n");
 }
 
+async function readTextFile(abs: string): Promise<string | undefined> {
+  let info;
+  try {
+    info = await lstat(abs);
+  } catch {
+    return undefined;
+  }
+  if (info.isSymbolicLink() || !info.isFile() || info.size > MAX_FILE_BYTES) {
+    return undefined;
+  }
+  try {
+    const content = await readFile(abs, "utf8");
+    if (content.includes("\u0000")) return undefined;
+    return content;
+  } catch {
+    return undefined;
+  }
+}
+
 async function collectFiles(cwd: string, relPaths: string[]): Promise<string[]> {
   const files: string[] = [];
   const visited = new Set<string>();
+  const root = resolve(cwd);
 
   async function walk(rel: string): Promise<void> {
-    const abs = join(cwd, rel);
+    const abs = resolve(root, rel);
     if (visited.has(abs)) return;
     visited.add(abs);
 
@@ -116,17 +136,13 @@ export async function generateContextPack(
   let availableTokens = 0;
   let truncated = false;
 
+  const root = resolve(cwd);
   for (const rel of paths) {
-    const abs = join(cwd, rel);
-    let content: string;
-    try {
-      content = await readFile(abs, "utf8");
-      if (content.includes("\u0000")) continue;
-    } catch {
-      continue;
-    }
+    const abs = resolve(root, rel);
+    const content = await readTextFile(abs);
+    if (content === undefined) continue;
 
-    const body = `# ${relative(cwd, abs)}\n${content}`;
+    const body = `# ${relative(root, abs)}\n${content}`;
     const tokens = estimateTokens(body);
     // Track the full discovered size regardless of the budget cap so the UI can
     // report real coverage (packed/available) rather than a perpetual 100%.

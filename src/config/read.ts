@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { CONFIG_FILENAME, DEFAULT_CONFIG } from "./defaults.js";
-import type { AdapterId, OlapConfig, RoleId } from "../types.js";
+import type { AdapterCapabilityProfile, AdapterId, OlapConfig, RoleId } from "../types.js";
 
 function mergeAdapterOptions(
   partial: Partial<OlapConfig["adapters"]> | undefined,
@@ -12,19 +12,21 @@ function mergeAdapterOptions(
   const capabilities = { ...base.capabilities };
   if (partial?.options) {
     for (const id of Object.keys(partial.options) as AdapterId[]) {
+      const extraArgs = partial.options[id]?.extra_args ?? base.options[id]?.extra_args ?? [];
       options[id] = {
         ...base.options[id],
         ...partial.options[id],
-        extra_args: partial.options[id]?.extra_args ?? base.options[id]?.extra_args ?? [],
+        extra_args: [...extraArgs],
       };
     }
   }
   if (partial?.capabilities) {
     for (const id of Object.keys(partial.capabilities) as AdapterId[]) {
-      capabilities[id] = {
-        ...base.capabilities[id],
-        ...partial.capabilities[id],
-      } as OlapConfig["adapters"]["capabilities"][AdapterId];
+      const baseProfile = base.capabilities[id];
+      const patch = partial.capabilities[id];
+      if (!baseProfile || !patch) continue;
+      const merged: AdapterCapabilityProfile = { ...baseProfile, ...patch };
+      capabilities[id] = merged;
     }
   }
   return {

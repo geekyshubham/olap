@@ -20,6 +20,24 @@ async function isExecutable(path: string): Promise<boolean> {
   }
 }
 
+/** Platform-specific executable names (PATHEXT on Windows). */
+function executableNames(name: string): string[] {
+  if (process.platform !== "win32") {
+    return [name];
+  }
+  const names = [name];
+  const pathext = process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD";
+  for (const ext of pathext.split(";")) {
+    const suffix = ext.trim();
+    if (!suffix) continue;
+    const normalized = suffix.startsWith(".") ? suffix : `.${suffix}`;
+    if (!name.toLowerCase().endsWith(normalized.toLowerCase())) {
+      names.push(`${name}${normalized}`);
+    }
+  }
+  return names;
+}
+
 export async function findBinary(
   name: string,
   pathEnv = process.env.PATH ?? "",
@@ -27,9 +45,11 @@ export async function findBinary(
   const sep = process.platform === "win32" ? ";" : ":";
   const dirs = pathEnv.split(sep).filter(Boolean);
   for (const dir of dirs) {
-    const candidate = join(dir, name);
-    if (await isExecutable(candidate)) {
-      return candidate;
+    for (const candidateName of executableNames(name)) {
+      const candidate = join(dir, candidateName);
+      if (await isExecutable(candidate)) {
+        return candidate;
+      }
     }
   }
   return undefined;
