@@ -39,9 +39,9 @@ export const DEFAULT_CONFIG: OlapConfig = {
         review: true,
         file_edits: true,
         shell: true,
-        model_discovery: true,
+        model_discovery: false,
         local: false,
-        notes: "Large-context CLI with discoverable model catalog.",
+        notes: "Large-context CLI; model list is usually configured externally.",
       },
       codex: {
         planning: true,
@@ -88,8 +88,8 @@ export const DEFAULT_CONFIG: OlapConfig = {
     network: false,
   },
   subagents: {
-    enabled: true,
-    max_parallel: 3,
+    enabled: false,
+    max_parallel: 1,
   },
   architect: {
     output_budget_tokens: 4096,

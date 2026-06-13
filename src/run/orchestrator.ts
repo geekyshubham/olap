@@ -139,9 +139,8 @@ export interface DerivedReviewInput {
 }
 
 /**
- * When the orchestrator didn't return a parseable review, derive one from real
- * signals (worker exit + whether files changed) instead of faking a pass. This
- * keeps the loop honest in live mode without a hard failure on noncompliant CLIs.
+ * Signal-derived review used only in unit tests. Live runs require orchestrator
+ * JSON and fail when it is missing (see loop.ts produceReview).
  */
 export function deriveReview(input: DerivedReviewInput): ArchitectReview {
   const { iteration, totalIterations, config } = input;

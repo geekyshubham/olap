@@ -288,6 +288,7 @@ export class ConversationComponent implements Component {
 
   addOutput(stream: "stdout" | "stderr", line: string): void {
     this.push({ kind: "output", stream, line });
+    if (line.trim()) this.activityAt = Date.now();
   }
 
   addRouting(strategy: "direct" | "loop", reason: string): void {
@@ -335,6 +336,7 @@ export class ConversationComponent implements Component {
     this.activity = "";
     this.activityAt = 0;
     this.scrollOffset = 0;
+    this.runId = "";
   }
 
   /** Record the active run id so the collapsed brief can link its full artifact. */
@@ -563,21 +565,29 @@ export class ConversationComponent implements Component {
     this.lastMaxOffset = maxOffset;
     if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
     if (this.scrollOffset < 0) this.scrollOffset = 0;
-    const end = all.length - this.scrollOffset; // exclusive
-    const startIdx = end - H;
-    const view = all.slice(startIdx, end); // exactly H lines
-    if (startIdx > 0) {
-      view[0] = truncateToWidth(this.theme.dim(`  ↑ ${startIdx} more — PgUp to scroll`), width);
+    const hintBottom = this.scrollOffset > 0;
+    const end = all.length - this.scrollOffset;
+    let contentH = H - (hintBottom ? 1 : 0);
+    let startIdx = Math.max(0, end - contentH);
+    const hintTop = startIdx > 0;
+    if (hintTop) {
+      contentH = Math.max(1, H - 1 - (hintBottom ? 1 : 0));
+      startIdx = Math.max(0, end - contentH);
     }
-    if (this.scrollOffset > 0) {
-      view[view.length - 1] = truncateToWidth(
-        this.theme.dim(`  ↓ ${this.scrollOffset} more — PgDn to scroll`), width);
+    const view: string[] = [];
+    if (hintTop) {
+      view.push(truncateToWidth(this.theme.dim(`  ↑ ${startIdx} more — PgUp to scroll`), width));
+    }
+    view.push(...all.slice(startIdx, end));
+    if (hintBottom) {
+      view.push(truncateToWidth(
+        this.theme.dim(`  ↓ ${this.scrollOffset} more — PgDn to scroll`), width));
     }
     return view;
   }
 }
 
-/** Orchestrator vs worker usage, sub-agent count, a real context-pack gauge, and live token totals. */
+/** Orchestrator vs worker usage, a real context-pack gauge, and live token totals. */
 export class UsagePanelComponent implements Component {
   private usage: UsageSnapshot;
   private contextUsed = 0;
@@ -699,7 +709,6 @@ export class UsagePanelComponent implements Component {
     const wrkMark = wrkActive ? t.spinner(spinnerFrame(this.frame)) : t.worker("◇");
     const orch = `${orchMark} ${t.orchestrator("orchestrator")} ${t.dim(orchModel)} ${t.faint(formatRoleUsage(this.usage.orchestrator))}${orchActive ? ` ${t.accent("working")}` : ""}`;
     const wrk = `${wrkMark} ${t.worker("worker")} ${t.dim(this.workerModel)} ${t.faint(formatRoleUsage(this.usage.worker))}${wrkActive ? ` ${t.accent("working")}` : ""}`;
-    const sub = `${t.dim("sub-agents")} ${t.accent(String(this.usage.subagents_spawned))} ${t.faint(`(${this.usage.subagents_active} active)`)}`;
     const totalIn = this.usage.orchestrator.tokens_in + this.usage.worker.tokens_in;
     const totalOut = this.usage.orchestrator.tokens_out + this.usage.worker.tokens_out;
     const ctxDenom = this.contextAvailable > 0 ? this.contextAvailable : this.contextMax;
@@ -709,7 +718,7 @@ export class UsagePanelComponent implements Component {
     const gauges = `${ctx}    ${tokens}${cost}`;
     return [
       truncateToWidth(` ${orch}`, width),
-      truncateToWidth(` ${wrk}    ${sub}`, width),
+      truncateToWidth(` ${wrk}`, width),
       truncateToWidth(` ${gauges}`, width),
     ];
   }

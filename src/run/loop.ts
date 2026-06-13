@@ -21,7 +21,7 @@ import {
   type DiffSummary,
 } from "../git/status.js";
 import { runValidators } from "../validators/runner.js";
-import { allReviewsValid, validateArchitectReview } from "../validators/review-schema.js";
+import { validateArchitectReview } from "../validators/review-schema.js";
 import { isAbortedStopReason } from "./agent-output.js";
 import { createAgentStream } from "./agent-stream.js";
 import { executeCommand, type ExecResult } from "./executor.js";
@@ -59,7 +59,6 @@ export interface LoopUpdate {
     | "event"
     | "review"
     | "usage"
-    | "subagent"
     | "output"
     | "agent"
     | "brief"
@@ -209,8 +208,7 @@ export function parseUsageFromOutput(stdout: string): { tokens_in: number; token
       // not JSON; keep scanning
     }
   }
-  const est = estimateTokens(stdout);
-  return { tokens_in: Math.ceil(est * 0.7), tokens_out: Math.max(1, Math.floor(est * 0.3)) };
+  return { tokens_in: 0, tokens_out: 0 };
 }
 
 function buildContextBlock(
@@ -438,12 +436,6 @@ export async function runOrchestratedLoop(
           : `Iteration ${i}/${maxIterations}: ${cleanedTask}`,
       });
 
-      if (config.subagents.enabled) {
-        usage.subagents_spawned += 1;
-        usage.subagents_active = Math.min(config.subagents.max_parallel, usage.subagents_active + 1);
-        emit({ type: "subagent", usage: structuredClone(usage), iteration: i });
-      }
-
       let workerOutput = "";
 
       const workerCommand = withCommandPrompt(workerBase!, workerPrompt, {
@@ -489,9 +481,6 @@ export async function runOrchestratedLoop(
         tokens_out: workerOut,
         message: workerMessage,
       });
-      if (config.subagents.enabled) {
-        usage.subagents_active = Math.max(0, usage.subagents_active - 1);
-      }
       pushUsage();
       if (failIfBudgetExceeded()) break;
 
@@ -637,7 +626,9 @@ export async function runOrchestratedLoop(
 
   const runId = options.runId ?? "loop-run";
   const sessionId = options.sessionId ?? "loop-session";
-  const reviewsValid = allReviewsValid(reviews, config) ? reviews.length : 0;
+  const reviewsValid = reviews.filter(
+    (review) => validateArchitectReview(review, config.architect.review_schema_version).valid,
+  ).length;
   const cost = currentCost();
   const summary: RunSummary = {
     run_id: runId,
@@ -757,7 +748,7 @@ async function produceReview(args: {
     changed: args.diff.changed,
     changeSummary: formatDiffSummary(args.diff),
   });
-  if (!fromOrchestrator && config.architect.require_valid_reviews) {
+  if (!fromOrchestrator) {
     args.emit({
       type: "error",
       error: "Orchestrator did not return a schema-valid review JSON.",
@@ -918,7 +909,6 @@ function buildReport(input: {
     "",
     `- Orchestrator: ${usage.orchestrator.calls} calls, in ${usage.orchestrator.tokens_in}, out ${usage.orchestrator.tokens_out}`,
     `- Worker: ${usage.worker.calls} calls, in ${usage.worker.tokens_in}, out ${usage.worker.tokens_out}`,
-    `- Sub-agents spawned: ${usage.subagents_spawned}`,
     `- Estimated cost: ${formatCostSummary(cost)}`,
     "",
     "## Changes",
@@ -952,7 +942,11 @@ function buildReport(input: {
     "## Status",
     "",
     input.executed
-      ? "Run completed: orchestrator and/or worker CLI processes were spawned."
-      : "Run completed without spawning CLI processes (adapters unavailable or plan-only mode).",
+      ? input.status === "completed"
+        ? "Run completed: orchestrator and/or worker CLI processes finished successfully."
+        : "Run failed after spawning orchestrator and/or worker CLI processes."
+      : input.status === "completed"
+        ? "Run completed without spawning CLI processes (plan-only mode)."
+        : "Run failed before or without spawning CLI processes.",
   ].join("\n");
 }

@@ -60,20 +60,32 @@ export function parseRoleSpec(
   return { adapter, model };
 }
 
-export function applyRunOverrides(config: OlapConfig, options: RunOptions): OlapConfig {
-  if (options.mode && MODES.includes(options.mode as WorkMode)) {
-    config.ui.mode = options.mode as WorkMode;
+export interface RunOverrideResult {
+  config: OlapConfig;
+  errors: string[];
+}
+
+export function applyRunOverrides(config: OlapConfig, options: RunOptions): RunOverrideResult {
+  const errors: string[] = [];
+  if (options.mode) {
+    if (MODES.includes(options.mode as WorkMode)) {
+      config.ui.mode = options.mode as WorkMode;
+    } else {
+      errors.push(`Invalid --mode "${options.mode}" (expected plan, build, or workflow).`);
+    }
   }
   if (options.theme) config.ui.theme = options.theme;
   if (options.orchestrator) {
     const parsed = parseRoleSpec(options.orchestrator, "orchestrator");
     if (parsed) config.roles.orchestrator = { ...config.roles.orchestrator, ...parsed };
+    else errors.push(`Invalid --orchestrator "${options.orchestrator}" (expected adapter[:model]).`);
   }
   if (options.worker) {
     const parsed = parseRoleSpec(options.worker, "worker");
     if (parsed) config.roles.worker = { ...config.roles.worker, ...parsed };
+    else errors.push(`Invalid --worker "${options.worker}" (expected adapter[:model]).`);
   }
-  return config;
+  return { config, errors };
 }
 
 function makePrinter(quiet: boolean): (update: LoopUpdate) => void {
@@ -119,7 +131,12 @@ function makePrinter(quiet: boolean): (update: LoopUpdate) => void {
 export async function runCommand(task: string, options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? process.cwd();
   const detections = await detectAdapters();
-  let config = applyRunOverrides(await readConfig(cwd), options);
+  const { config: overridden, errors: overrideErrors } = applyRunOverrides(await readConfig(cwd), options);
+  if (overrideErrors.length > 0) {
+    for (const error of overrideErrors) console.error(`olap run: ${error}`);
+    throw new Error(overrideErrors.join(" "));
+  }
+  let config = overridden;
   const resolved = await resolveConfigModels(config, detections);
   config = resolved.config;
   if (!options.quiet) {
@@ -200,8 +217,7 @@ export function printRunResult(result: RunResult): void {
   }
   console.log(
     `Usage: orchestrator ${result.usage.orchestrator.calls} calls ↑${result.usage.orchestrator.tokens_in} ↓${result.usage.orchestrator.tokens_out} · ` +
-      `worker ${result.usage.worker.calls} calls ↑${result.usage.worker.tokens_in} ↓${result.usage.worker.tokens_out} · ` +
-      `sub-agents ${result.usage.subagents_spawned}`,
+      `worker ${result.usage.worker.calls} calls ↑${result.usage.worker.tokens_in} ↓${result.usage.worker.tokens_out}`,
   );
   console.log(`Cost: ${formatCostSummary(result.cost)}`);
 }

@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { ContextPack, ContextPackFile, OlapConfig } from "../types.js";
 
@@ -11,6 +11,7 @@ const DEFAULT_PATHS = [
 ];
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".olap"]);
+const MAX_FILE_BYTES = 512 * 1024;
 
 export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
@@ -64,15 +65,21 @@ export function renderContextExcerpt(
 
 async function collectFiles(cwd: string, relPaths: string[]): Promise<string[]> {
   const files: string[] = [];
+  const visited = new Set<string>();
 
   async function walk(rel: string): Promise<void> {
     const abs = join(cwd, rel);
+    if (visited.has(abs)) return;
+    visited.add(abs);
+
     let info;
     try {
-      info = await stat(abs);
+      info = await lstat(abs);
     } catch {
       return;
     }
+
+    if (info.isSymbolicLink()) return;
 
     if (info.isDirectory()) {
       if (SKIP_DIRS.has(rel.split("/").pop() ?? rel)) return;
@@ -84,6 +91,7 @@ async function collectFiles(cwd: string, relPaths: string[]): Promise<string[]> 
     }
 
     if (info.isFile()) {
+      if (info.size > MAX_FILE_BYTES) return;
       files.push(rel);
     }
   }
@@ -113,6 +121,7 @@ export async function generateContextPack(
     let content: string;
     try {
       content = await readFile(abs, "utf8");
+      if (content.includes("\u0000")) continue;
     } catch {
       continue;
     }

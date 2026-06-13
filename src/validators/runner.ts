@@ -1,39 +1,60 @@
 import { spawn } from "node:child_process";
 import type { ValidatorConfig, ValidatorResult } from "../types.js";
+import { MAX_CAPTURE_BYTES } from "../run/executor.js";
+
+const VALIDATOR_TIMEOUT_MS = 600_000;
+
+function appendCaptured(current: string, chunk: string): string {
+  if (current.length >= MAX_CAPTURE_BYTES) return current;
+  return current + chunk.slice(0, MAX_CAPTURE_BYTES - current.length);
+}
 
 function runCommand(command: string, cwd: string): Promise<ValidatorResult> {
   return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+
     const child = spawn(command, {
       cwd,
       shell: true,
       env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let stdout = "";
-    let stderr = "";
+    const finish = (result: Omit<ValidatorResult, "name" | "command">) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ name: "", command, ...result });
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5_000).unref?.();
+    }, VALIDATOR_TIMEOUT_MS);
+    timer.unref?.();
 
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
+      stdout = appendCaptured(stdout, chunk.toString());
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+      stderr = appendCaptured(stderr, chunk.toString());
     });
 
     child.on("close", (code) => {
-      resolve({
-        name: "",
-        command,
-        ok: code === 0,
+      finish({
+        ok: code === 0 && !timedOut,
         exitCode: code,
         stdout,
-        stderr,
+        stderr: timedOut ? `${stderr}\n[validator timed out]`.trim() : stderr,
       });
     });
 
     child.on("error", (error) => {
-      resolve({
-        name: "",
-        command,
+      finish({
         ok: false,
         exitCode: null,
         stdout,

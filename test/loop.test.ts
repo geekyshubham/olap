@@ -130,10 +130,9 @@ describe("parseUsageFromOutput", () => {
     expect(usage).toEqual({ tokens_in: 10, tokens_out: 20 });
   });
 
-  it("falls back to an estimate when no usage is present", () => {
+  it("returns zero usage when no usage JSON is present", () => {
     const usage = parseUsageFromOutput("just some text output");
-    expect(usage.tokens_in).toBeGreaterThan(0);
-    expect(usage.tokens_out).toBeGreaterThan(0);
+    expect(usage).toEqual({ tokens_in: 0, tokens_out: 0 });
   });
 });
 

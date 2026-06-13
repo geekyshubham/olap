@@ -163,6 +163,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     tui.requestRender();
   };
   const openRunPlan = (task: string): void => {
+    closeOverlay();
     const plan = buildRunPlan(task, config);
     const overlay = new RunPlanOverlay(plan, theme);
     const handle = tui.showOverlay(overlay, { width: "72%", maxHeight: "70%", minWidth: 48 });
@@ -224,6 +225,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   };
 
   const openSettings = (focusId?: string): void => {
+    closeOverlay();
     const list = buildSettingsList(
       config,
       theme,
@@ -251,6 +253,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   };
 
   const openModelSelect = (role: RoleId): void => {
+    closeOverlay();
     const adapter = config.roles[role].adapter;
     const list = buildModelSelectList(
       adapter,
@@ -272,6 +275,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   };
 
   const openHelp = (): void => {
+    closeOverlay();
     const handle = tui.showOverlay(help, { width: "76%", maxHeight: "80%", minWidth: 48 });
     activeOverlay = { handle, kind: "help" };
     dimChrome();
@@ -473,8 +477,13 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
           }
         }
         break;
-      case "subagent":
       case "usage":
+        if (update.usage) {
+          usage.update({ usage: update.usage, cost: update.cost });
+          conversation.setReservedRows(reservedRows());
+        }
+        break;
+      case "final":
         if (update.usage) {
           usage.update({ usage: update.usage, cost: update.cost });
           conversation.setReservedRows(reservedRows());

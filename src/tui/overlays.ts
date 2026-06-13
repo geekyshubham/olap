@@ -10,7 +10,7 @@ const MODES = ["plan", "build", "workflow"];
 const APPROVALS = ["untrusted", "on-failure", "on-request", "never"];
 const SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
 const TOGGLE = ["off", "on"];
-const PARALLEL = ["1", "2", "3", "4", "5", "6", "8", "10", "12", "16"];
+
 const LOOP_POLICIES = ["auto", "always", "never"];
 const MAX_ITERATIONS = ["1", "2", "3", "4", "5", "6", "8", "10"];
 const EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
@@ -184,20 +184,6 @@ export function buildSettingsList(
       value: config.worker.stop_on_first_pass ? "on" : "off",
       values: TOGGLE,
     },
-    {
-      id: "subagents.enabled",
-      label: "Sub-agents",
-      description: "Spawn worker sub-agents per iteration.",
-      value: config.subagents.enabled ? "on" : "off",
-      values: TOGGLE,
-    },
-    {
-      id: "subagents.max_parallel",
-      label: "Max parallel sub-agents",
-      description: "Upper bound on concurrently active sub-agents.",
-      value: String(config.subagents.max_parallel),
-      values: PARALLEL,
-    },
   ];
 
   const onChange = (id: string, value: string): void => {
@@ -262,12 +248,6 @@ export function buildSettingsList(
         break;
       case "worker.stop_on_first_pass":
         config.worker.stop_on_first_pass = value === "on";
-        break;
-      case "subagents.enabled":
-        config.subagents.enabled = value === "on";
-        break;
-      case "subagents.max_parallel":
-        config.subagents.max_parallel = Number.parseInt(value, 10) || config.subagents.max_parallel;
         break;
     }
     hooks.onChange();

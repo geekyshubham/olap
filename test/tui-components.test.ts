@@ -51,8 +51,8 @@ const repo: RepoStatus = {
 const usage: UsageSnapshot = {
   orchestrator: { tokens_in: 1200, tokens_out: 900, calls: 4 },
   worker: { tokens_in: 8000, tokens_out: 5000, calls: 3 },
-  subagents_spawned: 3,
-  subagents_active: 1,
+  subagents_spawned: 0,
+  subagents_active: 0,
 };
 
 function assertWithinWidth(lines: string[], width: number): void {
@@ -158,7 +158,7 @@ describe("TUI components", () => {
     expect(convo.isRunning()).toBe(true);
   });
 
-  it("renders the usage panel with role usage and sub-agents", () => {
+  it("renders the usage panel with role usage and context gauges", () => {
     const panel = new UsagePanelComponent({
       usage,
       orchestratorModel: "grok:grok-4-latest",
@@ -184,7 +184,6 @@ describe("TUI components", () => {
     const joined = lines.join("\n");
     expect(joined).toContain("orchestrator");
     expect(joined).toContain("worker");
-    expect(joined).toContain("sub-agents");
     // Honest gauge: real repo coverage (packed/available) + real token totals,
     // no perpetual "100% ⚠ truncated".
     expect(joined).toContain("context");

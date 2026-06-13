@@ -77,6 +77,6 @@ describe("artifacts", () => {
 
     const reportText = await readFile(join(dir, "final-report.md"), "utf8");
     expect(reportText).toContain("Run Summary");
-    expect(reportText).toContain("orchestrator and/or worker CLI processes were spawned");
+    expect(reportText).toContain("orchestrator and/or worker CLI processes finished successfully");
   });
 });

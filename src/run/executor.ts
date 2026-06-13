@@ -28,6 +28,15 @@ export interface ProcessCommand {
   argv: string[];
 }
 
+/** Cap captured stdout/stderr so chatty CLIs cannot OOM the OLAP process. */
+export const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
+
+function appendCaptured(current: string, chunk: string): string {
+  if (current.length >= MAX_CAPTURE_BYTES) return current;
+  const room = MAX_CAPTURE_BYTES - current.length;
+  return current + chunk.slice(0, room);
+}
+
 function splitLines(buffer: string, onLine: (line: string) => void): string {
   let rest = buffer;
   let index = rest.indexOf("\n");
@@ -116,12 +125,12 @@ export function executeProcess(
 
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
-      stdout += text;
+      stdout = appendCaptured(stdout, text);
       stdoutBuf = splitLines(stdoutBuf + text, (line) => options.onLine?.("stdout", line));
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
-      stderr += text;
+      stderr = appendCaptured(stderr, text);
       stderrBuf = splitLines(stderrBuf + text, (line) => options.onLine?.("stderr", line));
     });
 

@@ -22,7 +22,7 @@ describe("config roles, ui, access, subagents", () => {
       sandbox: "workspace-write",
       network: false,
     });
-    expect(DEFAULT_CONFIG.subagents).toEqual({ enabled: true, max_parallel: 3 });
+    expect(DEFAULT_CONFIG.subagents).toEqual({ enabled: false, max_parallel: 1 });
   });
 
   it("serializes the new sections", () => {
@@ -67,7 +67,7 @@ describe("config roles, ui, access, subagents", () => {
   it("preserves role effort when CLI overrides adapter:model", () => {
     const config = cloneConfig();
     config.roles.orchestrator.effort = "high";
-    const updated = applyRunOverrides(config, { orchestrator: "claude:opus" });
+    const { config: updated } = applyRunOverrides(config, { orchestrator: "claude:opus" });
     expect(updated.roles.orchestrator).toEqual({
       adapter: "claude",
       model: "opus",
@@ -80,6 +80,6 @@ describe("config roles, ui, access, subagents", () => {
     expect(config.adapters.preferred).toBe("claude");
     expect(config.roles.orchestrator).toEqual(DEFAULT_CONFIG.roles.orchestrator);
     expect(config.ui.theme).toBe("mono");
-    expect(config.subagents.max_parallel).toBe(3);
+    expect(config.subagents.max_parallel).toBe(1);
   });
 });
