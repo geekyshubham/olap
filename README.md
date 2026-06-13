@@ -1,6 +1,16 @@
 # OLAP
 
-OLAP is an orchestrated loop architect/worker CLI for coding agents. It uses a small, token-efficient architect loop to plan and review work while cheaper or more available CLI workers do the implementation. The first supported worker adapters are Grok CLI, Claude Code, Gemini CLI, and Codex CLI.
+``
+                                                        ██████╗ ██╗      █████╗ ██████╗ 
+                                                       ██╔═══██╗██║     ██╔══██╗██╔══██╗
+                                                       ██║   ██║██║     ███████║██████╔╝
+                                                       ██║   ██║██║     ██╔══██║██╔═══╝ 
+                                                       ╚██████╔╝███████╗██║  ██║██║     
+                                                        ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     
+                                               orchestrated loop · architect plans, worker builds
+``
+
+▟▛ OLAP is an orchestrated loop architect/worker CLI for coding agents. It uses a small, token-efficient architect loop to plan and review work while cheaper or more available CLI workers do the implementation. The first supported worker adapters are Grok CLI, Claude Code, Gemini CLI, and Codex CLI.
 
 The terminal UI is built on `@earendil-works/pi-tui`, from the Pi monorepo, and OLAP exposes a small module manifest for Pi-compatible packages, skills, extensions, prompt templates, themes, and local modules.
 
