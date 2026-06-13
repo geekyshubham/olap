@@ -38,11 +38,17 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 export const SHORTCUT_HINTS = [
   "Enter run",
   "/settings",
-  "/models",
   "/mode",
   "/theme",
+  "PgUp/PgDn scroll",
   "^L clear",
   "^C quit",
+] as const;
+
+export const SHORTCUT_HINTS_RUNNING = [
+  "Esc cancel",
+  "^C cancel run",
+  "PgUp/PgDn scroll",
 ] as const;
 
 export const HELP_LINES = [
@@ -66,9 +72,10 @@ export const HELP_LINES = [
   "",
   "Shortcuts:",
   "  Enter       Run the task in the editor",
+  "  PgUp/PgDn   Scroll the transcript (↑/↓ when the input is empty)",
   "  Ctrl+L      Clear the conversation",
-  "  Ctrl+C      Quit",
-  "  Escape      Close an overlay",
+  "  Ctrl+C      Cancel a running task, or quit when idle",
+  "  Esc         Close an overlay / cancel a running task",
 ] as const;
 
 export const MODE_HINTS: Record<string, string> = {

@@ -47,6 +47,8 @@ export interface UiConfig {
   mode: WorkMode;
   /** Whether the animated banner is shown. */
   banner: boolean;
+  /** Show a run-plan confirmation overlay before starting a non-command task (TUI only). */
+  confirm_before_run: boolean;
 }
 
 export interface AccessConfig {
@@ -153,6 +155,12 @@ export interface ContextPack {
   generated_at: string;
   max_tokens: number;
   total_tokens: number;
+  /**
+   * Estimated tokens for the full set of discovered candidate files, before the
+   * budget cap. Lets the UI show real repo coverage (packed/available) instead
+   * of a gauge that is always pinned at 100% once the repo exceeds the budget.
+   */
+  available_tokens: number;
   truncated: boolean;
   files: ContextPackFile[];
 }

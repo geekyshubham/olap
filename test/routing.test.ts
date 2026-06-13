@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseTaskOverride, routeTask } from "../src/run/routing.js";
+import { buildRunPlan, parseTaskOverride, routeTask } from "../src/run/routing.js";
+import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 
 describe("routeTask", () => {
   it("routes publish tasks to direct mode in auto policy", () => {
@@ -62,5 +63,34 @@ describe("parseTaskOverride", () => {
       task: "git push",
       force: "direct",
     });
+  });
+});
+
+describe("buildRunPlan", () => {
+  const config = structuredClone(DEFAULT_CONFIG);
+
+  it("previews a full loop for implementation tasks and matches routeTask", () => {
+    const plan = buildRunPlan("implement the auth callback tests", config);
+    expect(plan.strategy).toBe("loop");
+    expect(plan.reason).toBe(routeTask("implement the auth callback tests", config.worker.loop_policy).reason);
+    expect(plan.maxIterations).toBe(config.worker.max_iterations);
+    expect(plan.mode).toBe(config.ui.mode);
+    expect(plan.orchestrator).toBe("grok:grok-composer-2.5-fast");
+    expect(plan.worker).toBe("grok:grok-composer-2.5-fast");
+    expect(plan.stopConditions.some((s) => s.includes("cancel"))).toBe(true);
+    expect(plan.stopConditions.some((s) => /max 3 iteration/.test(s))).toBe(true);
+  });
+
+  it("previews a single direct pass and strips the /direct prefix", () => {
+    const plan = buildRunPlan("/direct just publish the package", config);
+    expect(plan.strategy).toBe("direct");
+    expect(plan.task).toBe("just publish the package");
+    expect(plan.maxIterations).toBe(1);
+    expect(plan.stopConditions.some((s) => s.includes("single pass"))).toBe(true);
+  });
+
+  it("honors the /loop override even for operational text", () => {
+    const plan = buildRunPlan("/loop publish now", config);
+    expect(plan.strategy).toBe("loop");
   });
 });

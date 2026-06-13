@@ -11,6 +11,7 @@ import type {
   UsageSnapshot,
   WorkMode,
 } from "../types.js";
+import type { RunPlan } from "../run/routing.js";
 import type { RepoStatus } from "../git/status.js";
 import { formatDiffSummary, formatRepoStatus } from "../git/status.js";
 import type { DiffSummary } from "../git/status.js";
@@ -207,38 +208,6 @@ export class BannerComponent implements Component {
   }
 }
 
-/** A thin themed horizontal separator, optionally with a small inline label. */
-export class RuleComponent implements Component {
-  private theme: Theme;
-  private label: string;
-
-  constructor(theme?: Theme, label = "") {
-    this.theme = theme ?? getTheme();
-    this.label = label;
-  }
-
-  setTheme(theme: Theme): void {
-    this.theme = theme;
-  }
-
-  setLabel(label: string): void {
-    this.label = label;
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    if (width <= 0) return [""];
-    const t = this.theme;
-    if (!this.label) {
-      return [t.border("─".repeat(width))];
-    }
-    const tag = ` ${this.label} `;
-    const dashes = Math.max(0, width - tag.length - 1);
-    return [truncateToWidth(`${t.border("──")}${t.faint(tag)}${t.border("─".repeat(dashes))}`, width)];
-  }
-}
-
 export type ConversationEntry =
   | { kind: "user"; text: string }
   | { kind: "event"; event: RunEvent }
@@ -251,8 +220,17 @@ export type ConversationEntry =
   | { kind: "diff"; summary: DiffSummary }
   | { kind: "review"; review: ArchitectReview };
 
-const MAX_ENTRIES = 500;
-const MAX_VISIBLE_LINES = 48;
+/** Keep effectively all transcript history in memory for scrollback; only the
+ *  rendered viewport is bounded. Capped generously to avoid unbounded growth. */
+const MAX_ENTRIES = 5000;
+/** Smallest transcript viewport we will render, even on tiny terminals. */
+const MIN_VIEWPORT_LINES = 6;
+/** Fallback viewport height when terminal rows are unknown. */
+const FALLBACK_VIEWPORT_LINES = 24;
+/** Chrome rows (banner/bars/editor/footer) reserved outside the transcript by default. */
+const DEFAULT_RESERVED_ROWS = 16;
+/** Long orchestrator/worker briefs collapse to this many lines in the transcript. */
+const BRIEF_PREVIEW_LINES = 18;
 /** No worker sub-activity for this long while running ⇒ show a stall warning. */
 const STALL_THRESHOLD_MS = 12_000;
 
@@ -267,9 +245,20 @@ export class ConversationComponent implements Component {
   /** Last sub-activity label (e.g. "edit src/x.ts") for the live peek row. */
   private activity = "";
   private activityAt = 0;
+  /** Lines scrolled up from the bottom. 0 = following the latest output. */
+  private scrollOffset = 0;
+  /** Max scroll offset from the most recent render (so scroll keys can clamp). */
+  private lastMaxOffset = 0;
+  /** Chrome rows reserved outside the transcript (set by the app). */
+  private reservedRows = DEFAULT_RESERVED_ROWS;
+  /** Live terminal row count, so the viewport tracks terminal height. */
+  private rows: () => number;
+  /** Current run id, used to link the full brief artifact. */
+  private runId = "";
 
-  constructor(theme?: Theme) {
+  constructor(theme?: Theme, options?: { rows?: () => number }) {
     this.theme = theme ?? getTheme();
+    this.rows = options?.rows ?? (() => FALLBACK_VIEWPORT_LINES);
   }
 
   setTheme(theme: Theme): void {
@@ -309,6 +298,8 @@ export class ConversationComponent implements Component {
 
   addCommand(role: "orchestrator" | "worker", command: string): void {
     this.push({ kind: "command", role, command });
+    // A new command is fresh activity — keeps plan/review phases from looking stalled.
+    this.activityAt = Date.now();
   }
 
   addAgent(
@@ -341,13 +332,23 @@ export class ConversationComponent implements Component {
     this.phaseLabel = "";
     this.activity = "";
     this.activityAt = 0;
+    this.scrollOffset = 0;
+  }
+
+  /** Record the active run id so the collapsed brief can link its full artifact. */
+  setRunId(runId: string): void {
+    this.runId = runId;
   }
 
   setRunning(running: boolean, label = ""): void {
     this.running = running;
     this.phaseLabel = label;
-    if (running && this.startedAt === 0) this.startedAt = Date.now();
-    if (running) this.activityAt = Date.now();
+    if (running) {
+      // Starting a run snaps the transcript back to the live tail.
+      this.scrollOffset = 0;
+      this.activityAt = Date.now();
+      if (this.startedAt === 0) this.startedAt = Date.now();
+    }
     if (!running) {
       this.startedAt = 0;
       this.activity = "";
@@ -357,6 +358,8 @@ export class ConversationComponent implements Component {
 
   setPhase(label: string): void {
     this.phaseLabel = label;
+    // A phase change is liveness — prevents a false "⚠ idle" during plan/review.
+    this.activityAt = Date.now();
   }
 
   setFrame(frame: number): void {
@@ -366,6 +369,32 @@ export class ConversationComponent implements Component {
   isRunning(): boolean {
     return this.running;
   }
+
+  setReservedRows(rows: number): void {
+    this.reservedRows = Math.max(0, rows);
+  }
+  private viewportHeight(): number {
+    const total = this.rows() || FALLBACK_VIEWPORT_LINES;
+    return Math.max(MIN_VIEWPORT_LINES, total - this.reservedRows);
+  }
+  canScroll(): boolean {
+    return this.lastMaxOffset > 0;
+  }
+  scrollUp(lines: number): boolean {
+    if (this.lastMaxOffset <= 0) return false;
+    const next = Math.min(this.lastMaxOffset, this.scrollOffset + Math.max(1, lines));
+    if (next === this.scrollOffset) return false;
+    this.scrollOffset = next;
+    return true;
+  }
+  scrollDown(lines: number): boolean {
+    if (this.scrollOffset <= 0) return false;
+    this.scrollOffset = Math.max(0, this.scrollOffset - Math.max(1, lines));
+    return true;
+  }
+  pageUp(): boolean { return this.scrollUp(Math.max(1, this.viewportHeight() - 1)); }
+  pageDown(): boolean { return this.scrollDown(Math.max(1, this.viewportHeight() - 1)); }
+  scrollToBottom(): void { this.scrollOffset = 0; }
 
   invalidate(): void {}
 
@@ -413,10 +442,23 @@ export class ConversationComponent implements Component {
         const roleStyle = entry.role === "orchestrator" ? t.orchestrator : t.worker;
         const tag = roleStyle(entry.role === "orchestrator" ? "◆ orch brief" : "◇ wrk brief");
         const head = `  ${tag}`;
-        const body = wrap(entry.text, width, 4).map((line) =>
+        const bodyAll = entry.text.split("\n").flatMap((line) => wrap(line, width, 4));
+        const headLine = truncateToWidth(head, width);
+        if (bodyAll.length <= BRIEF_PREVIEW_LINES) {
+          const body = bodyAll.map((line) =>
+            truncateToWidth(`    ${t.text(line)}`, width),
+          );
+          return [headLine, ...body];
+        }
+        const preview = bodyAll.slice(0, BRIEF_PREVIEW_LINES).map((line) =>
           truncateToWidth(`    ${t.text(line)}`, width),
         );
-        return [truncateToWidth(head, width), ...body];
+        const where = this.runId ? `.olap/runs/${this.runId}/brief.md` : "run artifacts (brief.md)";
+        const hint = t.faint(truncateToWidth(
+          `    … +${bodyAll.length - BRIEF_PREVIEW_LINES} more lines · full brief in ${where}`,
+          width,
+        ));
+        return [headLine, ...preview, hint];
       }
       case "command": {
         const roleStyle = entry.role === "orchestrator" ? t.orchestrator : t.worker;
@@ -486,16 +528,11 @@ export class ConversationComponent implements Component {
   }
 
   render(width: number): string[] {
-    const lines: string[] = [];
+    const bodyLines: string[] = [];
     for (const entry of this.entries) {
-      lines.push(...this.renderEntry(entry, width));
+      bodyLines.push(...this.renderEntry(entry, width));
     }
-    const tail =
-      lines.length > MAX_VISIBLE_LINES ? lines.slice(-MAX_VISIBLE_LINES) : lines;
-    const clipped = lines.length > tail.length;
-    const out = clipped
-      ? [truncateToWidth(this.theme.dim(`  … ${lines.length - tail.length} earlier lines hidden`), width), ...tail]
-      : tail;
+    let statusLine: string | undefined;
     if (this.running) {
       const t = this.theme;
       const elapsed = this.startedAt > 0 ? formatDuration(Date.now() - this.startedAt) : "";
@@ -511,9 +548,30 @@ export class ConversationComponent implements Component {
         : stalled
           ? t.warn(`⚠ idle ${formatDuration(idleMs)}`)
           : "";
-      out.push(truncateToWidth(`  ${spin} ${label} ${time} ${peek}`.trimEnd(), width));
+      statusLine = truncateToWidth(`  ${spin} ${label} ${time} ${peek}`.trimEnd(), width);
     }
-    return out;
+    const all = statusLine !== undefined ? [...bodyLines, statusLine] : bodyLines;
+    const H = this.viewportHeight();
+    if (all.length <= H) {
+      this.lastMaxOffset = 0;
+      this.scrollOffset = 0;
+      return all;
+    }
+    const maxOffset = all.length - H;
+    this.lastMaxOffset = maxOffset;
+    if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
+    if (this.scrollOffset < 0) this.scrollOffset = 0;
+    const end = all.length - this.scrollOffset; // exclusive
+    const startIdx = end - H;
+    const view = all.slice(startIdx, end); // exactly H lines
+    if (startIdx > 0) {
+      view[0] = truncateToWidth(this.theme.dim(`  ↑ ${startIdx} more — PgUp to scroll`), width);
+    }
+    if (this.scrollOffset > 0) {
+      view[view.length - 1] = truncateToWidth(
+        this.theme.dim(`  ↓ ${this.scrollOffset} more — PgDn to scroll`), width);
+    }
+    return view;
   }
 }
 
@@ -522,7 +580,7 @@ export class UsagePanelComponent implements Component {
   private usage: UsageSnapshot;
   private contextUsed = 0;
   private contextMax = 1;
-  private contextTruncated = false;
+  private contextAvailable = 0;
   private orchestratorModel = "";
   private workerModel = "";
   private activeRole: "orchestrator" | "worker" | null = null;
@@ -576,12 +634,12 @@ export class UsagePanelComponent implements Component {
     usage?: UsageSnapshot;
     contextUsed?: number;
     contextMax?: number;
-    contextTruncated?: boolean;
+    contextAvailable?: number;
   }): void {
     if (patch.usage) this.usage = patch.usage;
     if (patch.contextUsed !== undefined) this.contextUsed = patch.contextUsed;
     if (patch.contextMax !== undefined) this.contextMax = patch.contextMax;
-    if (patch.contextTruncated !== undefined) this.contextTruncated = patch.contextTruncated;
+    if (patch.contextAvailable !== undefined) this.contextAvailable = patch.contextAvailable;
   }
 
   reset(): void {
@@ -592,7 +650,7 @@ export class UsagePanelComponent implements Component {
       subagents_active: 0,
     };
     this.contextUsed = 0;
-    this.contextTruncated = false;
+    this.contextAvailable = 0;
   }
 
   invalidate(): void {}
@@ -625,10 +683,10 @@ export class UsagePanelComponent implements Component {
     const sub = `${t.dim("sub-agents")} ${t.accent(String(this.usage.subagents_spawned))} ${t.faint(`(${this.usage.subagents_active} active)`)}`;
     const totalIn = this.usage.orchestrator.tokens_in + this.usage.worker.tokens_in;
     const totalOut = this.usage.orchestrator.tokens_out + this.usage.worker.tokens_out;
-    const pack = this.gaugeText("pack", this.contextUsed, this.contextMax, 8);
-    const trunc = this.contextTruncated ? ` ${t.warn("⚠ truncated")}` : "";
+    const ctxDenom = this.contextAvailable > 0 ? this.contextAvailable : this.contextMax;
+    const ctx = this.gaugeText("context", this.contextUsed, ctxDenom, 8);
     const tokens = `${t.dim("tokens")} ${t.tokens(`↑${formatTokenCount(totalIn)} ↓${formatTokenCount(totalOut)}`)}`;
-    const gauges = `${pack}${trunc}    ${tokens}`;
+    const gauges = `${ctx}    ${tokens}`;
     return [
       truncateToWidth(` ${orch}`, width),
       truncateToWidth(` ${wrk}    ${sub}`, width),
@@ -669,6 +727,10 @@ export class FooterComponent implements Component {
     if (patch.themeName) this.themeName = patch.themeName;
   }
 
+  setHints(hints: readonly string[]): void {
+    this.hints = hints;
+  }
+
   invalidate(): void {}
 
   render(width: number): string[] {
@@ -699,6 +761,48 @@ export class HelpOverlayComponent implements Component {
   render(width: number): string[] {
     const body = HELP_LINES.map((line) => (line ? this.theme.text(line) : ""));
     return frame("Help", body, width, this.theme);
+  }
+}
+
+/** Pre-run confirmation overlay: shows how a submitted task will run. */
+export class RunPlanOverlay implements Component {
+  private plan: RunPlan;
+  private theme: Theme;
+
+  constructor(plan: RunPlan, theme?: Theme) {
+    this.plan = plan;
+    this.theme = theme ?? getTheme();
+  }
+
+  setTheme(theme: Theme): void {
+    this.theme = theme;
+  }
+
+  setPlan(plan: RunPlan): void {
+    this.plan = plan;
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const t = this.theme;
+    const p = this.plan;
+    const strategy = p.strategy === "loop" ? t.accent("loop") : t.info("direct");
+    const body: string[] = [];
+    for (const line of wrap(p.task, Math.max(10, width - 8), 0)) {
+      body.push(body.length === 0 ? `${t.dim("Task:")}        ${t.text(line)}` : `             ${t.text(line)}`);
+    }
+    body.push(`${t.dim("Strategy:")}    ${strategy}`);
+    body.push(`${t.dim("Reason:")}      ${t.text(p.reason)}`);
+    body.push(`${t.dim("Stops when:")}  ${t.text(p.stopConditions.join(" · "))}`);
+    body.push(`${t.dim("Mode:")}        ${t.text(p.mode)}`);
+    body.push(`${t.dim("Orchestrator:")}${t.text(" " + p.orchestrator)}`);
+    body.push(`${t.dim("Worker:")}      ${t.text(p.worker)}`);
+    body.push("");
+    body.push(
+      `${t.accent("[Enter]")} ${t.dim("Start")}   ${t.accent("[Esc]")} ${t.dim("Cancel")}   ${t.accent("[e]")} ${t.dim("Edit task")}`,
+    );
+    return frame("Run plan", body, width, t);
   }
 }
 

@@ -23,6 +23,7 @@ export const DEFAULT_CONFIG: OlapConfig = {
     theme: "mono",
     mode: "build",
     banner: true,
+    confirm_before_run: true,
   },
   access: {
     approval: "on-failure",

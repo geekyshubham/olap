@@ -136,6 +136,13 @@ export function buildSettingsList(
       values: themeNames(),
     },
     {
+      id: "ui.confirm_before_run",
+      label: "Confirm before run",
+      description: "Show a run-plan confirmation overlay before starting a task.",
+      value: config.ui.confirm_before_run ? "on" : "off",
+      values: TOGGLE,
+    },
+    {
       id: "access.approval",
       label: "Approval",
       description: "How aggressively the worker is allowed to act.",
@@ -234,6 +241,9 @@ export function buildSettingsList(
       case "ui.theme":
         config.ui.theme = value;
         hooks.onThemeChange(value);
+        break;
+      case "ui.confirm_before_run":
+        config.ui.confirm_before_run = value === "on";
         break;
       case "access.approval":
         config.access.approval = value as OlapConfig["access"]["approval"];

@@ -15,7 +15,7 @@ describe("config roles, ui, access, subagents", () => {
       model: "grok-composer-2.5-fast",
       effort: "default",
     });
-    expect(DEFAULT_CONFIG.ui).toEqual({ theme: "mono", mode: "build", banner: true });
+    expect(DEFAULT_CONFIG.ui).toEqual({ theme: "mono", mode: "build", banner: true, confirm_before_run: true });
     expect(DEFAULT_CONFIG.access).toEqual({
       approval: "on-failure",
       sandbox: "workspace-write",

@@ -15,6 +15,7 @@ const pack: ContextPack = {
   generated_at: "2026-06-12T00:00:00.000Z",
   max_tokens: 32000,
   total_tokens: 20,
+  available_tokens: 20,
   truncated: false,
   files: [
     { path: "src/a.ts", tokens: 10, content: "export const a = 1; // MARKER_A" },
@@ -44,6 +45,8 @@ describe("context pack", () => {
     expect(pack.total_tokens).toBeGreaterThan(0);
     expect(pack.max_tokens).toBe(DEFAULT_CONFIG.architect.context_pack_max_tokens);
     expect(pack.truncated).toBe(false);
+    // Full untruncated repo size is tracked; when nothing is dropped it equals the packed size.
+    expect(pack.available_tokens).toBe(pack.total_tokens);
   });
 
   it("truncates context pack when exceeding max tokens", async () => {
@@ -62,6 +65,9 @@ describe("context pack", () => {
     const pack = await generateContextPack(cwd, config, ["big.txt"]);
     expect(pack.truncated).toBe(true);
     expect(pack.total_tokens).toBeLessThanOrEqual(100);
+    // The discovered repo is bigger than the budget — coverage denominator reflects that.
+    expect(pack.available_tokens).toBeGreaterThan(pack.total_tokens);
+    expect(pack.available_tokens).toBeGreaterThan(pack.max_tokens);
     const content = await readFile(join(cwd, "big.txt"), "utf8");
     expect(content.length).toBeGreaterThan(pack.files[0].content.length);
   });

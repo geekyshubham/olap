@@ -105,6 +105,7 @@ export async function generateContextPack(
   const paths = await collectFiles(cwd, includePaths);
   const packFiles: ContextPackFile[] = [];
   let totalTokens = 0;
+  let availableTokens = 0;
   let truncated = false;
 
   for (const rel of paths) {
@@ -118,11 +119,14 @@ export async function generateContextPack(
 
     const body = `# ${relative(cwd, abs)}\n${content}`;
     const tokens = estimateTokens(body);
+    // Track the full discovered size regardless of the budget cap so the UI can
+    // report real coverage (packed/available) rather than a perpetual 100%.
+    availableTokens += tokens;
 
     if (totalTokens + tokens > maxTokens) {
       truncated = true;
       const remaining = maxTokens - totalTokens;
-      if (remaining <= 0) break;
+      if (remaining <= 0) continue;
 
       let charBudget = remaining * 4;
       let clipped = `${body.slice(0, charBudget)}\n... [truncated]`;
@@ -134,7 +138,8 @@ export async function generateContextPack(
       const clippedTokens = estimateTokens(clipped);
       packFiles.push({ path: rel, tokens: clippedTokens, content: clipped });
       totalTokens += clippedTokens;
-      break;
+      // Keep scanning remaining files (read-only) to finish the availability tally.
+      continue;
     }
 
     packFiles.push({ path: rel, tokens, content: body });
@@ -145,6 +150,7 @@ export async function generateContextPack(
     generated_at: now.toISOString(),
     max_tokens: maxTokens,
     total_tokens: totalTokens,
+    available_tokens: Math.max(availableTokens, totalTokens),
     truncated,
     files: packFiles,
   };

@@ -97,6 +97,8 @@ export interface OrchestratedResult {
   adapterCommands: AdapterCommand[];
   summary: RunSummary;
   report: string;
+  /** Full orchestrator plan/brief text (untruncated) for artifacts and the TUI. */
+  brief: string;
   usage: UsageSnapshot;
   roles: Record<RoleId, ResolvedRole>;
   status: "completed" | "failed";
@@ -219,6 +221,7 @@ function buildContextBlock(
   };
 }
 
+/** Bound a plan for one-line event log messages (not the worker payload). */
 function capBrief(text: string): string {
   const trimmed = text.trim();
   return trimmed.length > MAX_BRIEF_CHARS ? `${trimmed.slice(0, MAX_BRIEF_CHARS)}\n... [brief truncated]` : trimmed;
@@ -373,7 +376,8 @@ export async function runOrchestratedLoop(
       message: planText ? `Architect plan: ${capBrief(planText)}` : "Architect plan: (no output)",
     });
   }
-  emit({ type: "brief", role: "orchestrator", text: capBrief(planText) || "(no plan produced)" });
+  emit({ type: "brief", role: "orchestrator", text: planText.trim() || "(no plan produced)" });
+  const fullBrief = planText.trim();
   pushUsage();
   await delay(stepDelay);
 
@@ -389,7 +393,7 @@ export async function runOrchestratedLoop(
 
       const workerPrompt = buildWorkerPrompt({
         task: cleanedTask,
-        brief: capBrief(planText),
+        brief: fullBrief || cleanedTask,
         direct,
         iteration: i,
         totalIterations: maxIterations,
@@ -646,6 +650,7 @@ export async function runOrchestratedLoop(
     adapterCommands: executedCommands,
     summary,
     report,
+    brief: fullBrief,
     usage,
     roles,
     status,

@@ -6,6 +6,7 @@ import {
   ConversationComponent,
   FooterComponent,
   HelpOverlayComponent,
+  RunPlanOverlay,
   UsagePanelComponent,
   padLine,
 } from "../src/tui/components.js";
@@ -160,17 +161,20 @@ describe("TUI components", () => {
       workerModel: "grok:grok-code-fast-1",
       theme,
     });
-    panel.update({ contextUsed: 4000, contextMax: 32000, contextTruncated: true });
+    panel.update({ contextUsed: 4000, contextMax: 32000, contextAvailable: 64000 });
     const lines = panel.render(100);
     assertWithinWidth(lines, 100);
     const joined = lines.join("\n");
     expect(joined).toContain("orchestrator");
     expect(joined).toContain("worker");
     expect(joined).toContain("sub-agents");
-    // Honest gauges: pack fill (real) + truncation flag + real token totals.
-    expect(joined).toContain("pack");
+    // Honest gauge: real repo coverage (packed/available) + real token totals,
+    // no perpetual "100% ⚠ truncated".
+    expect(joined).toContain("context");
     expect(joined).toContain("tokens");
-    expect(joined).toContain("truncated");
+    // 4000 packed of 64000 discovered ≈ 6% coverage (not pinned at 100%).
+    expect(joined).toContain("6%");
+    expect(joined).not.toContain("truncated");
     panel.setVisible(false);
     expect(panel.render(100)).toEqual([]);
   });
@@ -253,5 +257,108 @@ describe("TUI components", () => {
   it("padLine pads and truncates to width", () => {
     expect(visibleWidth(padLine("test", 20))).toBe(20);
     expect(visibleWidth(padLine("a very long line of text here", 10))).toBeLessThanOrEqual(10);
+  });
+});
+
+describe("transcript scrolling", () => {
+  const theme = getTheme();
+
+  function bigConvo(): ConversationComponent {
+    // 12-row viewport (rows 12, no reserved chrome) with 60 one-line entries.
+    const convo = new ConversationComponent(theme, { rows: () => 12 });
+    convo.setReservedRows(0);
+    for (let i = 0; i < 60; i++) convo.addUser(`line-${i}`);
+    return convo;
+  }
+
+  it("renders a bounded viewport with a scroll-up indicator instead of dropping history", () => {
+    const convo = bigConvo();
+    const view = convo.render(80);
+    assertWithinWidth(view, 80);
+    expect(view.length).toBe(12);
+    expect(view.join("\n")).toContain("PgUp");
+    expect(convo.canScroll()).toBe(true);
+  });
+
+  it("scrolls up to reveal older lines and back to the bottom", () => {
+    const convo = bigConvo();
+    convo.render(80); // prime lastMaxOffset
+    expect(convo.pageUp()).toBe(true);
+    const scrolled = convo.render(80).join("\n");
+    expect(scrolled).toContain("PgDn"); // a bottom indicator appears once scrolled up
+    // A line that is hidden at the bottom becomes visible after scrolling up.
+    expect(scrolled).toContain("line-40");
+
+    convo.scrollToBottom();
+    const bottom = convo.render(80).join("\n");
+    expect(bottom).toContain("line-59");
+    expect(bottom).not.toContain("PgDn");
+  });
+
+  it("does not scroll when everything fits", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 40 });
+    convo.setReservedRows(0);
+    convo.addUser("only one line");
+    convo.render(80);
+    expect(convo.canScroll()).toBe(false);
+    expect(convo.scrollUp(1)).toBe(false);
+  });
+});
+
+describe("collapsible brief", () => {
+  const theme = getTheme();
+
+  it("collapses a long brief and links the full artifact", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 80 });
+    convo.setReservedRows(0);
+    convo.setRunId("RUN123");
+    const longBrief = Array.from({ length: 40 }, (_, i) => `brief line ${i}`).join("\n");
+    convo.addBrief("orchestrator", longBrief);
+    const joined = convo.render(100).join("\n");
+    expect(joined).toContain("orch brief");
+    expect(joined).toContain("more lines");
+    expect(joined).toContain(".olap/runs/RUN123/brief.md");
+  });
+
+  it("shows a short brief in full", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 80 });
+    convo.setReservedRows(0);
+    convo.addBrief("worker", "do the thing\nthen verify");
+    const joined = convo.render(100).join("\n");
+    expect(joined).toContain("do the thing");
+    expect(joined).toContain("then verify");
+    expect(joined).not.toContain("more lines");
+  });
+});
+
+describe("run-plan overlay", () => {
+  const theme = getTheme();
+
+  it("renders the strategy, stop conditions, and models with a confirm hint", () => {
+    const overlay = new RunPlanOverlay(
+      {
+        task: "add the auth callback tests",
+        strategy: "loop",
+        reason: "implementation task — full orchestrator/worker loop",
+        mode: "build",
+        maxIterations: 3,
+        stopOnFirstPass: false,
+        orchestrator: "grok:grok-composer-2.5-fast",
+        worker: "grok:grok-composer-2.5-fast",
+        stopConditions: ["max 3 iterations reached", "you cancel (Esc / Ctrl+C)"],
+      },
+      theme,
+    );
+    for (const width of [60, 80, 120]) {
+      assertWithinWidth(overlay.render(width), width);
+    }
+    const joined = overlay.render(100).join("\n");
+    expect(joined).toContain("Run plan");
+    expect(joined).toContain("add the auth callback tests");
+    expect(joined).toContain("loop");
+    expect(joined).toContain("build");
+    expect(joined).toContain("grok:grok-composer-2.5-fast");
+    expect(joined).toContain("Start");
+    expect(joined).toContain("Cancel");
   });
 });

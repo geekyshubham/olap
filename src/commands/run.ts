@@ -164,6 +164,7 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
     config,
     events: result.events,
     report: result.report,
+    brief: result.brief,
     contextPack,
     reviews: result.reviews,
     adapterCommands: result.adapterCommands,

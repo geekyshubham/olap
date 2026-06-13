@@ -31,6 +31,7 @@ export async function writeRunArtifacts(options: {
   config: OlapConfig;
   events: RunEvent[];
   report: string;
+  brief?: string;
   contextPack?: ContextPack;
   reviews?: ArchitectReview[];
   adapterCommands?: AdapterCommand[];
@@ -51,6 +52,18 @@ export async function writeRunArtifacts(options: {
     ),
     writeFile(join(dir, "final-report.md"), options.report.trim() + "\n", "utf8"),
   ];
+
+  if (options.brief !== undefined) {
+    // Full, untruncated orchestrator plan/brief — the TUI shows a collapsed view
+    // and links here for the complete text.
+    writes.push(
+      writeFile(
+        join(dir, "brief.md"),
+        (options.brief.trim() || "(no plan produced)") + "\n",
+        "utf8",
+      ),
+    );
+  }
 
   if (options.contextPack) {
     writes.push(

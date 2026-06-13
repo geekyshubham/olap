@@ -1,10 +1,28 @@
-import type { LoopPolicy } from "../types.js";
+import type { LoopPolicy, OlapConfig, RoleConfig, WorkMode } from "../types.js";
 
 export type RunStrategy = "direct" | "loop";
 
 export interface RouteDecision {
   strategy: RunStrategy;
   reason: string;
+}
+
+/** A preview of how a submitted task will run, for the pre-run confirmation overlay. */
+export interface RunPlan {
+  /** Task text after stripping /direct or /loop prefixes. */
+  task: string;
+  strategy: RunStrategy;
+  reason: string;
+  mode: WorkMode;
+  /** Effective iteration cap (1 for direct/single-pass). */
+  maxIterations: number;
+  stopOnFirstPass: boolean;
+  /** `adapter:model` badge for the orchestrator role. */
+  orchestrator: string;
+  /** `adapter:model` badge for the worker role. */
+  worker: string;
+  /** Human-readable stop conditions, in order. */
+  stopConditions: string[];
 }
 
 const DIRECT_HINTS = [
@@ -134,4 +152,43 @@ export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
   }
 
   return { strategy: "loop", reason: "default — full orchestrator/worker loop" };
+}
+
+function roleBadge(role: RoleConfig): string {
+  return role.model ? `${role.adapter}:${role.model}` : role.adapter;
+}
+
+/**
+ * Build a preview of how a submitted task will run, reusing the exact routing
+ * logic so the confirmation overlay matches what the loop will actually do.
+ */
+export function buildRunPlan(task: string, config: OlapConfig): RunPlan {
+  const { task: cleaned } = parseTaskOverride(task);
+  const decision = routeTask(task, config.worker.loop_policy);
+  const direct = decision.strategy === "direct";
+  const maxIterations = direct ? 1 : Math.max(1, config.worker.max_iterations);
+
+  const stopConditions: string[] = [];
+  if (direct) {
+    stopConditions.push("worker finishes a single pass (no review loop)");
+  } else {
+    if (config.worker.stop_on_first_pass) {
+      stopConditions.push("orchestrator review passes");
+    }
+    stopConditions.push(`max ${maxIterations} iteration${maxIterations === 1 ? "" : "s"} reached`);
+    stopConditions.push("a review returns a failing verdict");
+  }
+  stopConditions.push("you cancel (Esc / Ctrl+C)");
+
+  return {
+    task: cleaned,
+    strategy: decision.strategy,
+    reason: decision.reason,
+    mode: config.ui.mode,
+    maxIterations,
+    stopOnFirstPass: config.worker.stop_on_first_pass,
+    orchestrator: roleBadge(config.roles.orchestrator),
+    worker: roleBadge(config.roles.worker),
+    stopConditions,
+  };
 }

@@ -1,7 +1,6 @@
 import {
   CombinedAutocompleteProvider,
   Container,
-  Editor,
   matchesKey,
   ProcessTerminal,
   TUI,
@@ -17,6 +16,7 @@ import { getRepoStatus } from "../git/status.js";
 import { formatDiffSummary } from "../git/status.js";
 import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
 import { runOrchestratedLoop, terminalSessionStatus, type LoopUpdate } from "../run/loop.js";
+import { buildRunPlan } from "../run/routing.js";
 import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
 import { checkForUpdate, formatUpdateNotice } from "../update-check.js";
 import { PACKAGE_NAME, VERSION } from "../version.js";
@@ -28,11 +28,12 @@ import {
   FooterComponent,
   HelpOverlayComponent,
   OverlayPanel,
-  RuleComponent,
+  RunPlanOverlay,
   UsagePanelComponent,
 } from "./components.js";
+import { OlapEditor } from "./editor.js";
 import { formatModelBadge } from "./format.js";
-import { resolveGlobalKey, SHORTCUT_HINTS, SLASH_COMMANDS } from "./keyboard.js";
+import { resolveGlobalKey, SHORTCUT_HINTS, SHORTCUT_HINTS_RUNNING, SLASH_COMMANDS } from "./keyboard.js";
 import { buildModelSelectList, buildSettingsList } from "./overlays.js";
 import {
   getTheme,
@@ -68,13 +69,16 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     theme,
   });
   const banner = new BannerComponent(theme, config.ui.banner);
-  const conversation = new ConversationComponent(theme);
+  const conversation = new ConversationComponent(theme, { rows: () => terminal.rows });
   const usage = new UsagePanelComponent({
     orchestratorModel: formatModelBadge(config.roles.orchestrator.adapter, config.roles.orchestrator.model),
     workerModel: formatModelBadge(config.roles.worker.adapter, config.roles.worker.model),
     theme,
   });
   usage.update({ contextMax: config.architect.context_pack_max_tokens });
+  const reservedRows = (): number =>
+    (config.ui.banner ? 9 : 0) + 1 + 3 + 2 + 1 + 1;
+  conversation.setReservedRows(reservedRows());
   const footer = new FooterComponent({
     hints: SHORTCUT_HINTS,
     mode: config.ui.mode,
@@ -83,7 +87,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     theme,
   });
   const help = new HelpOverlayComponent(theme);
-  const editor = new Editor(tui, makeEditorTheme(theme));
+  const editor = new OlapEditor(tui, makeEditorTheme(theme));
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(
       SLASH_COMMANDS.map((c) => ({ name: c.name, description: c.description })),
@@ -91,12 +95,9 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     ),
   );
 
-  const topRule = new RuleComponent(theme);
-
   const layout = new Container();
   layout.addChild(banner);
   layout.addChild(contextBar);
-  layout.addChild(topRule);
   layout.addChild(conversation);
   layout.addChild(usage);
   layout.addChild(editor);
@@ -107,8 +108,10 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   // ---- live state ----
   let frame = 0;
   let spinnerTimer: NodeJS.Timeout | undefined;
-  let activeOverlay: { handle: OverlayHandle; kind: "help" | "interactive" } | undefined;
+  let activeOverlay: { handle: OverlayHandle; kind: "help" | "interactive" | "confirm" } | undefined;
   let abortController: AbortController | undefined;
+  let pendingTask: string | undefined;
+  let cancelledByUser = false;
 
   const startSpinner = (): void => {
     if (spinnerTimer) return;
@@ -127,6 +130,23 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     }
   };
 
+  const cancelRun = (): void => {
+    if (!abortController) return;
+    cancelledByUser = true;
+    abortController.abort();
+    conversation.addNote("Run cancelled", "warn");
+    tui.requestRender();
+  };
+  const openRunPlan = (task: string): void => {
+    const plan = buildRunPlan(task, config);
+    const overlay = new RunPlanOverlay(plan, theme);
+    const handle = tui.showOverlay(overlay, { width: "72%", maxHeight: "70%", minWidth: 48 });
+    activeOverlay = { handle, kind: "confirm" };
+    pendingTask = task;
+    dimChrome();
+    tui.requestRender();
+  };
+
   const persist = (): void => {
     writeConfig(cwd, config).catch(() => undefined);
   };
@@ -143,6 +163,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     );
     footer.update({ mode: config.ui.mode, access: config.access, themeName: config.ui.theme });
     banner.setVisible(config.ui.banner);
+    conversation.setReservedRows(reservedRows());
   };
 
   const setChromeTheme = (t: Theme): void => {
@@ -151,7 +172,6 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     conversation.setTheme(t);
     usage.setTheme(t);
     footer.setTheme(t);
-    topRule.setTheme(t);
     editor.borderColor = t.border;
   };
 
@@ -381,12 +401,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
 
   const runTask = async (task: string): Promise<void> => {
     editor.disableSubmit = true;
+    cancelledByUser = false;
+    footer.setHints(SHORTCUT_HINTS_RUNNING);
     conversation.addUser(task);
     conversation.setRunning(true, "Starting run");
     startSpinner();
     tui.requestRender();
 
     const runId = createRunId();
+    conversation.setRunId(runId);
     const sessionId = createSessionId();
     abortController = new AbortController();
 
@@ -404,7 +427,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       usage.update({
         contextUsed: contextPack.total_tokens,
         contextMax: config.architect.context_pack_max_tokens,
-        contextTruncated: contextPack.truncated,
+        contextAvailable: contextPack.available_tokens,
       });
 
       const result = await runOrchestratedLoop({
@@ -435,6 +458,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         config,
         events: result.events,
         report: result.report,
+        brief: result.brief,
         contextPack,
         reviews: result.reviews,
         adapterCommands: result.adapterCommands,
@@ -444,11 +468,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       });
 
       conversation.setRunning(false);
-      const changeNote = result.executed ? ` · ${formatDiffSummary(result.diff)}` : "";
-      conversation.addNote(
-        `Run ${runId} ${result.status}${changeNote} · artifacts in .olap/runs/${runId}`,
-        result.status === "completed" ? "success" : "error",
-      );
+      if (cancelledByUser) {
+        conversation.addNote(`Run ${runId} cancelled · artifacts in .olap/runs/${runId}`, "warn");
+      } else {
+        const changeNote = result.executed ? ` · ${formatDiffSummary(result.diff)}` : "";
+        conversation.addNote(
+          `Run ${runId} ${result.status}${changeNote} · artifacts in .olap/runs/${runId}`,
+          result.status === "completed" ? "success" : "error",
+        );
+      }
 
       getRepoStatus(cwd)
         .then((next) => {
@@ -463,6 +491,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         "error",
       );
     } finally {
+      footer.setHints(SHORTCUT_HINTS);
       stopSpinner();
       usage.setActiveRole(null);
       editor.disableSubmit = false;
@@ -480,6 +509,10 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       void handleCommand(input);
       return;
     }
+    if (config.ui.confirm_before_run) {
+      openRunPlan(input);
+      return;
+    }
     void runTask(input);
   };
 
@@ -491,8 +524,36 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   };
 
   tui.addInputListener((data) => {
+    // Ctrl+C cancels an active run; only quits when idle.
     if (matchesKey(data, "ctrl+c")) {
-      cleanupAndExit();
+      if (abortController) {
+        cancelRun();
+      } else {
+        cleanupAndExit();
+      }
+      return { consume: true };
+    }
+    // Pre-run confirmation overlay.
+    if (activeOverlay?.kind === "confirm") {
+      if (matchesKey(data, "enter")) {
+        const task = pendingTask;
+        pendingTask = undefined;
+        closeOverlay();
+        if (task) void runTask(task);
+      } else if (matchesKey(data, "escape")) {
+        pendingTask = undefined;
+        closeOverlay();
+        conversation.addNote("Run cancelled before start", "dim");
+        tui.requestRender();
+      } else if (data === "e") {
+        const task = pendingTask;
+        pendingTask = undefined;
+        closeOverlay();
+        if (task) {
+          editor.setText(task);
+          tui.requestRender();
+        }
+      }
       return { consume: true };
     }
     if (activeOverlay?.kind === "help") {
@@ -502,8 +563,34 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       return { consume: true };
     }
     if (activeOverlay?.kind === "interactive") {
-      // Let the focused list/settings component handle navigation and escape.
       return undefined;
+    }
+    // No overlay open below.
+    // Esc cancels a running task.
+    if (matchesKey(data, "escape") && abortController) {
+      cancelRun();
+      return { consume: true };
+    }
+    // Transcript scrolling (PgUp/PgDn always; arrows only when the input is empty).
+    if (matchesKey(data, "pageUp")) {
+      conversation.pageUp();
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "pageDown")) {
+      conversation.pageDown();
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "up") && editor.getText() === "" && conversation.canScroll()) {
+      conversation.scrollUp(1);
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "down") && editor.getText() === "" && conversation.canScroll()) {
+      conversation.scrollDown(1);
+      tui.requestRender();
+      return { consume: true };
     }
     const action = resolveGlobalKey(data);
     if (action?.type === "clear") {
