@@ -6,7 +6,7 @@ import type { ResolvedRole, UsageSnapshot } from "../src/types.js";
 const usage: UsageSnapshot = {
   orchestrator: { tokens_in: 1_000_000, tokens_out: 100_000, calls: 2 },
   worker: { tokens_in: 2_000_000, tokens_out: 1_000_000, calls: 3 },
-  subagents_spawned: 3,
+  subagents_spawned: 0,
   subagents_active: 0,
 };
 

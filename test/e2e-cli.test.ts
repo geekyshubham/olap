@@ -63,6 +63,18 @@ async function setValidators(dir: string, command: string): Promise<void> {
   await writeFile(join(dir, "olap.config.yaml"), serializeConfig(config), "utf8");
 }
 
+async function patchConfig(
+  dir: string,
+  patch: (config: import("../src/types.js").OlapConfig) => void,
+): Promise<void> {
+  const { readConfig } = await import("../src/config/read.js");
+  const { serializeConfig } = await import("../src/config/write.js");
+  const { writeFile } = await import("node:fs/promises");
+  const config = await readConfig(dir);
+  patch(config);
+  await writeFile(join(dir, "olap.config.yaml"), serializeConfig(config), "utf8");
+}
+
 async function runGit(cwd: string, args: string[]): Promise<void> {
   await run("git", args, { cwd });
 }
@@ -119,9 +131,9 @@ describe("E2E CLI", () => {
     expect(files).toContain("summary.json");
   });
 
-  it("completes build mode with fake grok and writes diff artifacts", async () => {
+  it("completes direct-routing build (no review loop) with fake grok and writes diff artifacts", async () => {
     const { dir, env } = await setupE2eRepo();
-    // Leave a clean working tree — the fake worker edits src/smoke.ts during the run.
+    // "no loops" routes direct — worker only, no orchestrator review CLI.
     const smokeBefore = await readFile(join(dir, "src/smoke.ts"), "utf8");
     expect(smokeBefore).toContain("true");
 
@@ -138,11 +150,53 @@ describe("E2E CLI", () => {
 
     const runs = await readdir(join(dir, ".olap", "runs"));
     const latest = runs.sort().at(-1)!;
+    const runDir = join(dir, ".olap", "runs", latest);
     const changes = JSON.parse(
-      await readFile(join(dir, ".olap", "runs", latest, "changes.json"), "utf8"),
+      await readFile(join(runDir, "changes.json"), "utf8"),
     ) as { changed: boolean; files: Array<{ path: string }> };
     expect(changes.changed).toBe(true);
     expect(changes.files.some((f) => f.path === "src/smoke.ts")).toBe(true);
+
+    const commands = JSON.parse(
+      await readFile(join(runDir, "adapter-commands.json"), "utf8"),
+    ) as Array<{ step?: string; phase: string }>;
+    expect(commands.some((c) => c.step === "review")).toBe(false);
+    const files = await readdir(runDir);
+    expect(files).not.toContain("architect-reviews.jsonl");
+  });
+
+  it("completes loop-mode build with orchestrator review JSON and CLI token usage", async () => {
+    const { dir, env } = await setupE2eRepo();
+    await patchConfig(dir, (config) => {
+      config.worker.loop_policy = "always";
+      config.worker.max_iterations = 1;
+      config.worker.stop_on_first_pass = true;
+    });
+    const result = await runCli(
+      ["run", "implement fix for smoke.ts", "--mode", "build", "--quiet"],
+      { cwd: dir, env },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("completed");
+    // Token counts from fake-grok JSON usage fields (plan 70/35 + review 90/45, worker 120/80).
+    expect(result.stdout).toMatch(/orchestrator 2 calls ↑160 ↓80/);
+    expect(result.stdout).toMatch(/worker 1 calls ↑120 ↓80/);
+
+    const runs = await readdir(join(dir, ".olap", "runs"));
+    const runDir = join(dir, ".olap", "runs", runs.sort().at(-1)!);
+    const reviewsText = await readFile(join(runDir, "architect-reviews.jsonl"), "utf8");
+    const review = JSON.parse(reviewsText.trim().split("\n")[0]!) as {
+      verdict: string;
+      summary: string;
+    };
+    expect(review.verdict).toBe("pass");
+    expect(review.summary).toBe("Looks good.");
+    expect(review.summary).not.toContain("Derived review");
+
+    const commands = JSON.parse(
+      await readFile(join(runDir, "adapter-commands.json"), "utf8"),
+    ) as Array<{ step?: string }>;
+    expect(commands.some((c) => c.step === "review")).toBe(true);
   });
 
   it("runs workflow mode with injected passing validators", async () => {

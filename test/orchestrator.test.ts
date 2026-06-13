@@ -41,6 +41,12 @@ describe("extractPlanText", () => {
   it("falls back when output is empty", () => {
     expect(extractPlanText("   ", "fallback")).toBe("fallback");
   });
+
+  it("falls back when JSON has no readable plan text", () => {
+    expect(extractPlanText('{"usage":{"input_tokens":10,"output_tokens":20}}', "fallback")).toBe(
+      "fallback",
+    );
+  });
 });
 
 describe("coerceReview", () => {
@@ -74,10 +80,11 @@ describe("extractReview", () => {
     expect(out.review.verdict).toBe("revise");
   });
 
-  it("derives a review from real signals when no JSON is present", () => {
+  it("falls back to deriveReview when no JSON is present (unit-test helper only — live runs fail instead)", () => {
     const out = extractReview("the worker did stuff, looks fine", derived);
     expect(out.fromOrchestrator).toBe(false);
     expect(out.review.verdict).toBe("pass"); // workerOk + changed
+    expect(out.review.summary).toContain("Derived review");
   });
 });
 

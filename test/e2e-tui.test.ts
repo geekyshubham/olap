@@ -122,7 +122,7 @@ describe("E2E TUI user flows", () => {
     // Paginated settings — advance to worker section rows.
     for (let i = 0; i < 12; i++) list.handleInput("\x1b[B");
     const laterPage = list.render(90).join("\n");
-    expect(laterPage).toMatch(/Max iterations|Stop on first pass|Max parallel|Loop policy/);
+    expect(laterPage).toMatch(/Max iterations|Stop on first pass|Loop policy/);
     expect(typeof list.updateValue).toBe("function");
   });
 

@@ -67,6 +67,8 @@ export function extractPlanText(stdout: string, fallback: string): string {
   }
 
   if (texts.length > 0) return texts.join("\n").trim();
+  // JSON/metadata-only blobs (e.g. usage objects) are not a usable plan.
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return fallback;
   // Plain-text orchestrator (e.g. kiro chat) — use the raw output as the brief.
   return trimmed;
 }
@@ -187,7 +189,7 @@ export function extractReview(
 ): ReviewExtraction {
   const objects = findJsonObjects(stdout);
   // Prefer the last object that mentions a verdict (CLIs often print logs first).
-  for (const obj of objects.reverse()) {
+  for (const obj of [...objects].reverse()) {
     try {
       const parsed = JSON.parse(obj) as Record<string, unknown>;
       const candidate = "verdict" in parsed ? parsed : (parsed.review as Record<string, unknown>);

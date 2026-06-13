@@ -192,6 +192,13 @@ export class BannerComponent implements Component {
     this.visibleBanner = visible;
   }
 
+  /** Rows occupied in the layout (1 on narrow terminals, 9 on wide). */
+  chromeRowCount(width: number): number {
+    if (!this.visibleBanner) return 0;
+    const logoWidth = Math.max(...OLAP_LOGO.map((line) => line.length));
+    return width < logoWidth + 2 ? 1 : 9;
+  }
+
   invalidate(): void {}
 
   render(width: number): string[] {
@@ -257,7 +264,7 @@ export class ConversationComponent implements Component {
   /** Max scroll offset from the most recent render (so scroll keys can clamp). */
   private lastMaxOffset = 0;
   /** Chrome rows reserved outside the transcript (set by the app). */
-  private reservedRows = DEFAULT_RESERVED_ROWS;
+  private reservedRows: number | (() => number) = DEFAULT_RESERVED_ROWS;
   /** Live terminal row count, so the viewport tracks terminal height. */
   private rows: () => number;
   /** Current run id, used to link the full brief artifact. */
@@ -391,12 +398,16 @@ export class ConversationComponent implements Component {
     return this.running;
   }
 
-  setReservedRows(rows: number): void {
-    this.reservedRows = Math.max(0, rows);
+  setReservedRows(rows: number | (() => number)): void {
+    this.reservedRows = rows;
+  }
+  private chromeReservedRows(): number {
+    const rows = typeof this.reservedRows === "function" ? this.reservedRows() : this.reservedRows;
+    return Math.max(0, rows);
   }
   private viewportHeight(): number {
     const total = this.rows() || FALLBACK_VIEWPORT_LINES;
-    return Math.max(MIN_VIEWPORT_LINES, total - this.reservedRows);
+    return Math.max(MIN_VIEWPORT_LINES, total - this.chromeReservedRows());
   }
   canScroll(): boolean {
     return this.lastMaxOffset > 0;

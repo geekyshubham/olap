@@ -65,7 +65,7 @@ OLAP always spawns the configured orchestrator and worker CLIs when their adapte
 
 - orchestrator phases plan and emit compact structured reviews
 - worker phases receive the task, context pack, and access-mapped flags
-- stdout/stderr stream into the timeline and token usage is parsed from JSON output
+- stdout/stderr stream into the timeline; token usage is parsed **only** from `usage` fields in CLI JSON output (not from text length or heuristics)
 - all output is captured into `.olap/runs/<run-id>`
 - validators remain repo-defined commands (workflow mode)
 

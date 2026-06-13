@@ -35,6 +35,7 @@ access:
   approval: on-failure
   sandbox: workspace-write
   network: false
+# Reserved for future parallel workers — ignored at runtime today.
 subagents:
   enabled: false
   max_parallel: 1

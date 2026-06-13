@@ -21,6 +21,8 @@ export interface CliDependencies {
 }
 
 interface RunCliOptions {
+  cwd?: string;
+  sessionId?: string;
   mode?: string;
   orchestrator?: string;
   worker?: string;
@@ -122,6 +124,8 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .command("run")
     .description("Run the architect/worker loop for a task")
     .argument("<task>", "Task description")
+    .option("--cwd <dir>", "Working directory for config, context pack, and git status")
+    .option("--session-id <id>", "Resume or group runs under an existing session id")
     .option("--mode <mode>", "Operating mode: plan | build | workflow")
     .option("--orchestrator <adapter[:model]>", "Override orchestrator role")
     .option("--worker <adapter[:model]>", "Override worker role")
@@ -129,6 +133,8 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .option("--quiet", "Suppress live event output")
     .action(runCliAction(async (task: string, options: RunCliOptions) => {
       const runOptions: RunOptions = {
+        cwd: options.cwd,
+        sessionId: options.sessionId,
         mode: options.mode,
         orchestrator: options.orchestrator,
         worker: options.worker,

@@ -75,7 +75,7 @@ export async function writeRunArtifacts(options: {
     );
   }
 
-  if (options.reviews) {
+  if (options.reviews && options.reviews.length > 0) {
     writes.push(
       writeFile(
         join(dir, "architect-reviews.jsonl"),

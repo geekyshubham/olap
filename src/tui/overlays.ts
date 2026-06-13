@@ -3,7 +3,7 @@ import type { AdapterId, OlapConfig, RoleId } from "../types.js";
 import { defaultModelFor, findModel } from "../adapters/models.js";
 import { resolveModelsForRole } from "../adapters/discover.js";
 import { OlapSettingsList, type OlapSettingItem } from "./settings-list.js";
-import { makeSelectListTheme, themeNames, type Theme } from "./theme.js";
+import { getTheme, makeSelectListTheme, themeNames, type Theme } from "./theme.js";
 
 const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro", "ollama"];
 const MODES = ["plan", "build", "workflow"];
@@ -73,7 +73,7 @@ export function buildSettingsList(
     buildModelSelectList(
       config.roles[role].adapter,
       role,
-      theme,
+      getTheme(),
       (modelId) => done(modelId),
       () => done(undefined),
     );

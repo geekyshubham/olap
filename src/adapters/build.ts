@@ -237,8 +237,8 @@ export function buildArchitectCommand(
         argv: [
           binary,
           "run",
-          model ?? "qwen2.5-coder:7b",
           ...opts.extra_args,
+          model ?? "qwen2.5-coder:7b",
           prompt,
         ],
         shell: "",
@@ -357,8 +357,8 @@ export function buildWorkerCommand(
         argv: [
           binary,
           "run",
-          model ?? "qwen2.5-coder:7b",
           ...opts.extra_args,
+          model ?? "qwen2.5-coder:7b",
           task,
         ],
         shell: "",

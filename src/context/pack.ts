@@ -13,6 +13,13 @@ const DEFAULT_PATHS = [
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".olap"]);
 const MAX_FILE_BYTES = 512 * 1024;
 
+/** True when `target` resolves under `root` (prevents absolute / traversal include paths). */
+export function isPathWithinRoot(root: string, target: string): boolean {
+  const resolvedRoot = resolve(root);
+  const resolvedTarget = resolve(root, target);
+  return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(`${resolvedRoot}/`);
+}
+
 export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
@@ -88,7 +95,11 @@ async function collectFiles(cwd: string, relPaths: string[]): Promise<string[]> 
   const root = resolve(cwd);
 
   async function walk(rel: string): Promise<void> {
+    if (rel.startsWith("/") || rel.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(rel)) {
+      return;
+    }
     const abs = resolve(root, rel);
+    if (!isPathWithinRoot(root, abs)) return;
     if (visited.has(abs)) return;
     visited.add(abs);
 

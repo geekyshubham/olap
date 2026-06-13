@@ -84,6 +84,22 @@ describe("artifacts", () => {
     expect(configSnapshot).toContain("mode: plan");
   });
 
+  it("skips architect-reviews.jsonl when the reviews array is empty", async () => {
+    const cwd = await createTempDir();
+    const runId = createRunId(new Date("2026-06-12T10:00:00.000Z"));
+    const dir = await writeRunArtifacts({
+      cwd,
+      runId,
+      task: "Direct pass",
+      config: DEFAULT_CONFIG,
+      events: [],
+      report: "# Report\n",
+      reviews: [],
+    });
+    const files = await readdir(dir);
+    expect(files).not.toContain("architect-reviews.jsonl");
+  });
+
   it("writes optional CLI artifacts when provided", async () => {
     const cwd = await createTempDir();
     const runId = createRunId(new Date("2026-06-12T10:00:00.000Z"));

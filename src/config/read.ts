@@ -4,11 +4,26 @@ import { parse as parseYaml } from "yaml";
 import { CONFIG_FILENAME, DEFAULT_CONFIG } from "./defaults.js";
 import type { AdapterCapabilityProfile, AdapterId, OlapConfig, RoleId } from "../types.js";
 
+function cloneAdapterOptions(
+  options: OlapConfig["adapters"]["options"],
+): OlapConfig["adapters"]["options"] {
+  const cloned = {} as OlapConfig["adapters"]["options"];
+  for (const id of Object.keys(options) as AdapterId[]) {
+    const entry = options[id];
+    if (!entry) continue;
+    cloned[id] = {
+      ...entry,
+      extra_args: [...entry.extra_args],
+    };
+  }
+  return cloned;
+}
+
 function mergeAdapterOptions(
   partial: Partial<OlapConfig["adapters"]> | undefined,
 ): OlapConfig["adapters"] {
   const base = DEFAULT_CONFIG.adapters;
-  const options = { ...base.options };
+  const options = cloneAdapterOptions(base.options);
   const capabilities = { ...base.capabilities };
   if (partial?.options) {
     for (const id of Object.keys(partial.options) as AdapterId[]) {
@@ -41,7 +56,11 @@ function mergeRoles(partial: Partial<OlapConfig["roles"]> | undefined): OlapConf
   const base = DEFAULT_CONFIG.roles;
   const roles = { ...base };
   for (const role of Object.keys(base) as RoleId[]) {
-    roles[role] = { ...base[role], ...partial?.[role] };
+    const merged = { ...base[role], ...partial?.[role] };
+    if (merged.effort === null || merged.effort === undefined || merged.effort === "") {
+      merged.effort = base[role].effort;
+    }
+    roles[role] = merged;
   }
   return roles;
 }

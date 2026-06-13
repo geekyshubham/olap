@@ -135,6 +135,19 @@ describe("parseUsageFromOutput", () => {
     expect(usage).toEqual({ tokens_in: 0, tokens_out: 0 });
   });
 
+  it("does not estimate tokens from output text length", () => {
+    const longText = "x".repeat(50_000);
+    expect(parseUsageFromOutput(longText)).toEqual({ tokens_in: 0, tokens_out: 0 });
+    expect(parseUsageFromOutput(`{"text":"${longText}"}`)).toEqual({ tokens_in: 0, tokens_out: 0 });
+  });
+
+  it("extracts usage from a top-level JSON array", () => {
+    const usage = parseUsageFromOutput(
+      JSON.stringify([{ text: "done" }, { usage: { input_tokens: 7, output_tokens: 9 } }]),
+    );
+    expect(usage).toEqual({ tokens_in: 7, tokens_out: 9 });
+  });
+
   it("extracts usage from pretty-printed JSON split across lines", () => {
     const pretty = [
       "{",
@@ -231,6 +244,9 @@ describe("runOrchestratedLoop", () => {
     expect(result.executed).toBe(true);
     expect(result.usage.orchestrator.calls).toBe(2);
     expect(result.usage.worker.calls).toBe(1);
+    // recordingExecutor plan/review JSON omits usage — counts stay zero (CLI JSON only).
+    expect(result.usage.orchestrator.tokens_in).toBe(0);
+    expect(result.usage.orchestrator.tokens_out).toBe(0);
     expect(result.usage.worker.tokens_in).toBe(40);
     expect(result.usage.worker.tokens_out).toBe(60);
     expect(result.diff.changed).toBe(true);
@@ -672,6 +688,34 @@ describe("runOrchestratedLoop", () => {
     });
 
     expect(result.status).toBe("failed");
+  });
+
+  it("accepts loop-mode runs when baseline signature capture failed but run diff shows changes", async () => {
+    let sigCalls = 0;
+    const { execute } = recordingExecutor();
+    const result = await runOrchestratedLoop({
+      task: "implement the feature",
+      config: cfg((c) => {
+        c.ui.mode = "build";
+        c.worker.max_iterations = 1;
+        c.worker.loop_policy = "always";
+      }),
+      cwd: process.cwd(),
+      detections: GROK_DETECTED,
+      delay: NO_DELAY,
+      execute,
+      getRunDiff: async () => SOME_DIFF,
+      getHead: async () => "baseline-head",
+      getChangeSignature: async () => {
+        sigCalls += 1;
+        if (sigCalls <= 2) throw new Error("transient git status failure");
+        return "after-worker";
+      },
+      repoStatus: NO_REPO_STATUS,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(sigCalls).toBeGreaterThan(2);
   });
 
   it("does not count pre-existing working-tree changes as run changes", async () => {

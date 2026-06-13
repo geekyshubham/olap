@@ -187,20 +187,50 @@ export function shouldRunOrchestrator(orchestratorAvailable: boolean): boolean {
 
 function usageFromJsonValue(parsed: Record<string, unknown>): { tokens_in: number; tokens_out: number } | undefined {
   const usage = (parsed.usage ?? parsed) as Record<string, unknown>;
-  const inTok =
-    Number(usage.input_tokens ?? usage.prompt_tokens ?? usage.tokens_in ?? 0) || 0;
-  const outTok =
-    Number(usage.output_tokens ?? usage.completion_tokens ?? usage.tokens_out ?? 0) || 0;
+  const inTok = Math.max(
+    0,
+    Number(usage.input_tokens ?? usage.prompt_tokens ?? usage.tokens_in ?? 0) || 0,
+  );
+  const outTok = Math.max(
+    0,
+    Number(usage.output_tokens ?? usage.completion_tokens ?? usage.tokens_out ?? 0) || 0,
+  );
   if (inTok > 0 || outTok > 0) {
     return { tokens_in: inTok, tokens_out: outTok };
   }
   return undefined;
 }
 
+function usageFromParsedValue(value: unknown): { tokens_in: number; tokens_out: number } | undefined {
+  if (Array.isArray(value)) {
+    for (const item of [...value].reverse()) {
+      if (item && typeof item === "object") {
+        const hit = usageFromJsonValue(item as Record<string, unknown>);
+        if (hit) return hit;
+      }
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    return usageFromJsonValue(value as Record<string, unknown>);
+  }
+  return undefined;
+}
+
 /** Best-effort extraction of token usage from a worker CLI's JSON output. */
 export function parseUsageFromOutput(stdout: string): { tokens_in: number; tokens_out: number } {
+  const trimmed = stdout.trim();
+  if (trimmed) {
+    try {
+      const hit = usageFromParsedValue(JSON.parse(trimmed));
+      if (hit) return hit;
+    } catch {
+      // fall through to embedded-object / NDJSON scan
+    }
+  }
+
   // Prefer the last embedded object with usage (CLIs may log before the final JSON blob).
-  for (const obj of findJsonObjects(stdout).reverse()) {
+  for (const obj of [...findJsonObjects(stdout)].reverse()) {
     try {
       const hit = usageFromJsonValue(JSON.parse(obj) as Record<string, unknown>);
       if (hit) return hit;
@@ -331,6 +361,10 @@ export async function runOrchestratedLoop(
     if (gitAvailable) {
       runBaselineHead = await getHead(options.cwd).catch(() => undefined);
       runBaselineSignature = await getChangeSignature(options.cwd).catch(() => undefined);
+      // Transient git hiccups at run start should not force a false "no changes" failure.
+      if (runBaselineSignature === undefined) {
+        runBaselineSignature = await getChangeSignature(options.cwd).catch(() => undefined);
+      }
     }
   }
   const orchContext = buildContextBlock(
@@ -589,13 +623,17 @@ export async function runOrchestratedLoop(
       status = "failed";
       emit({ type: "error", error: "Cannot verify file changes outside a git work tree." });
     } else if (!worktreeChangedSinceStart && !headMoved) {
-      status = "failed";
-      emit({
-        type: "error",
-        error: runBaselineHead
-          ? "No file changes were detected since the run started."
-          : "No file changes were detected (repository has no commits yet).",
-      });
+      const fallbackToRunDiff =
+        runBaselineSignature === undefined && diff.changed;
+      if (!fallbackToRunDiff) {
+        status = "failed";
+        emit({
+          type: "error",
+          error: runBaselineHead
+            ? "No file changes were detected since the run started."
+            : "No file changes were detected (repository has no commits yet).",
+        });
+      }
     }
   }
 

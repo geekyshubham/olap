@@ -56,7 +56,7 @@ export function parseRoleSpec(
   const trimmed = spec.trim();
   if (!trimmed) return undefined;
   const [adapterRaw, ...modelParts] = trimmed.split(":");
-  const adapter = adapterRaw.trim() as AdapterId;
+  const adapter = adapterRaw.trim().toLowerCase() as AdapterId;
   if (!adapter || !ADAPTERS.includes(adapter)) return undefined;
   const model = modelParts.join(":").trim() || defaultModelFor(adapter, role);
   return { adapter, model };
@@ -83,7 +83,23 @@ export function applyRunOverrides(config: OlapConfig, options: RunOptions): RunO
   }
   if (options.theme !== undefined) {
     const theme = options.theme.trim();
-    if (theme) out.ui.theme = theme;
+    if (!theme) {
+      errors.push(`Invalid --theme "${options.theme}" (expected a non-empty theme name).`);
+    } else {
+      out.ui.theme = theme;
+    }
+  }
+  if (options.cwd !== undefined) {
+    const cwd = options.cwd.trim();
+    if (!cwd) {
+      errors.push(`Invalid --cwd "${options.cwd}" (expected a non-empty directory).`);
+    }
+  }
+  if (options.sessionId !== undefined) {
+    const sessionId = options.sessionId.trim();
+    if (!sessionId) {
+      errors.push(`Invalid --session-id "${options.sessionId}" (expected a non-empty session id).`);
+    }
   }
   if (options.orchestrator !== undefined) {
     const parsed = parseRoleSpec(options.orchestrator, "orchestrator");
@@ -139,7 +155,7 @@ function makePrinter(quiet: boolean): (update: LoopUpdate) => void {
 }
 
 export async function runCommand(task: string, options: RunOptions = {}): Promise<RunResult> {
-  const cwd = options.cwd ?? process.cwd();
+  const cwd = options.cwd?.trim() || process.cwd();
   const detections = await detectAdapters();
   const { config: overridden, errors: overrideErrors } = applyRunOverrides(await readConfig(cwd), options);
   if (overrideErrors.length > 0) {
@@ -156,7 +172,7 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
   }
 
   const runId = createRunId();
-  const sessionId = options.sessionId ?? createSessionId();
+  const sessionId = options.sessionId?.trim() || createSessionId();
   const contextPack = await generateContextPack(cwd, config);
 
   if (!options.quiet) {

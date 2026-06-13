@@ -273,6 +273,12 @@ describe("TUI components", () => {
     assertWithinWidth(narrow, 20);
     expect(narrow.join("\n")).toContain("OLAP");
     expect(new BannerComponent(theme, false).render(80)).toEqual([]);
+
+    const wide = new BannerComponent(theme, true);
+    expect(wide.chromeRowCount(80)).toBe(9);
+    expect(wide.chromeRowCount(20)).toBe(1);
+    expect(wide.chromeRowCount(80)).toBe(wide.render(80).length);
+    expect(wide.chromeRowCount(20)).toBe(wide.render(20).length);
   });
 
   it("padLine pads and truncates to width", () => {

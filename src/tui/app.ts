@@ -46,6 +46,7 @@ import {
   getTheme,
   makeEditorTheme,
   mutedThemeFor,
+  nextThemeName,
   setTheme,
   themeNames,
   type Theme,
@@ -97,14 +98,14 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   });
   usage.update({ contextMax: config.architect.context_pack_max_tokens });
   const reservedRows = (): number => {
-    const bannerRows = config.ui.banner ? 9 : 0;
+    const bannerRows = banner.chromeRowCount(terminal.columns);
     const contextBarRows = 1;
     const usageRows = usage.chromeRowCount();
     const editorRows = 2;
     const footerRows = 1;
     return bannerRows + contextBarRows + usageRows + editorRows + footerRows;
   };
-  conversation.setReservedRows(reservedRows());
+  conversation.setReservedRows(reservedRows);
   const footer = new FooterComponent({
     hints: SHORTCUT_HINTS,
     mode: config.ui.mode,
@@ -192,7 +193,6 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     );
     footer.update({ mode: config.ui.mode, access: config.access, themeName: config.ui.theme });
     banner.setVisible(config.ui.banner);
-    conversation.setReservedRows(reservedRows());
   };
 
   const setChromeTheme = (t: Theme): void => {
@@ -201,6 +201,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     conversation.setTheme(t);
     usage.setTheme(t);
     footer.setTheme(t);
+    editor.applyTheme(theme);
     editor.borderColor = t.border;
   };
 
@@ -221,6 +222,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
 
   const closeOverlay = (): void => {
     if (!activeOverlay) return;
+    if (activeOverlay.kind === "confirm") pendingTask = undefined;
     activeOverlay.handle.hide();
     activeOverlay = undefined;
     activeOverlayComponent = undefined;
@@ -393,6 +395,13 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
           applyTheme(arg);
           persist();
           refreshChrome();
+        } else if (!arg) {
+          const next = nextThemeName(config.ui.theme);
+          config.ui.theme = next;
+          applyTheme(next);
+          persist();
+          refreshChrome();
+          conversation.addNote(`Theme: ${next}`, "dim");
         } else {
           openSettings("ui.theme");
         }
@@ -409,7 +418,6 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       }
       case "usage":
         usage.setVisible(!usage.isVisible());
-        conversation.setReservedRows(reservedRows());
         conversation.addNote(`Usage panel ${usage.isVisible() ? "shown" : "hidden"}`, "dim");
         break;
       case "graphify":
@@ -450,8 +458,8 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         if (update.line) conversation.addOutput(update.stream ?? "stdout", update.line);
         break;
       case "routing":
-        if (update.strategy && update.reason) {
-          conversation.addRouting(update.strategy, update.reason);
+        if (update.strategy) {
+          conversation.addRouting(update.strategy, update.reason ?? "");
         }
         break;
       case "brief":
@@ -493,14 +501,15 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         break;
       case "usage":
       case "final":
-        if (update.usage) {
-          usage.update({ usage: update.usage, cost: update.cost });
-          conversation.setReservedRows(reservedRows());
-        }
+        if (update.usage) usage.update({ usage: update.usage, cost: update.cost });
         break;
       case "error":
         if (update.error) conversation.addNote(update.error, "error");
         break;
+      default: {
+        const unhandled: never = update.type;
+        void unhandled;
+      }
     }
     tui.requestRender();
   };

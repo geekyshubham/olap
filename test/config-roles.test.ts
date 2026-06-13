@@ -64,6 +64,22 @@ describe("config roles, ui, access, subagents", () => {
     expect(config.worker.max_iterations).toBe(5);
   });
 
+  it("rejects empty --cwd and --session-id overrides", () => {
+    const config = cloneConfig();
+    const cwdResult = applyRunOverrides(config, { cwd: "  " });
+    expect(cwdResult.errors).toContain('Invalid --cwd "  " (expected a non-empty directory).');
+
+    const sessionResult = applyRunOverrides(config, { sessionId: "" });
+    expect(sessionResult.errors).toContain('Invalid --session-id "" (expected a non-empty session id).');
+  });
+
+  it("parses role specs case-insensitively", () => {
+    const config = cloneConfig();
+    const { config: updated } = applyRunOverrides(config, { worker: "Grok:grok-fast" });
+    expect(updated.roles.worker.adapter).toBe("grok");
+    expect(updated.roles.worker.model).toBe("grok-fast");
+  });
+
   it("preserves role effort when CLI overrides adapter:model", () => {
     const config = cloneConfig();
     config.roles.orchestrator.effort = "high";

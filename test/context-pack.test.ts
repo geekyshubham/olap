@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   estimateTokens,
   generateContextPack,
+  isPathWithinRoot,
   renderContextDigest,
   renderContextExcerpt,
 } from "../src/context/pack.js";
@@ -97,5 +98,20 @@ describe("context rendering for prompts", () => {
   it("handles an empty/undefined pack gracefully", () => {
     expect(renderContextExcerpt(undefined, 1000)).toBe("");
     expect(renderContextDigest(undefined)).toContain("no repository context");
+  });
+
+  it("rejects paths outside the workspace root", () => {
+    const root = "/tmp/project";
+    expect(isPathWithinRoot(root, "src/index.ts")).toBe(true);
+    expect(isPathWithinRoot(root, "/etc/passwd")).toBe(false);
+    expect(isPathWithinRoot(root, "../outside.txt")).toBe(false);
+  });
+
+  it("skips traversal include paths when generating a pack", async () => {
+    const cwd = await createTempDir();
+    await writeFileInDir(cwd, "safe.txt", "ok\n");
+
+    const pack = await generateContextPack(cwd, DEFAULT_CONFIG, ["safe.txt", "../escape.txt"]);
+    expect(pack.files.map((f) => f.path)).toEqual(["safe.txt"]);
   });
 });

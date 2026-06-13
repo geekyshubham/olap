@@ -168,7 +168,7 @@ Access settings are surfaced in the TUI and mapped into each adapter's real perm
 
 ## Cost
 
-Cost estimates are based on observed token usage from adapter output and configurable per-model prices. They are estimates for run-time visibility, not a billing source of truth.
+Cost estimates are based on token counts **parsed from CLI JSON output** (`usage.input_tokens` / `usage.output_tokens` and common aliases) and configurable per-model prices. OLAP does not estimate tokens from output length or other heuristics. Estimates are for run-time visibility, not a billing source of truth.
 
 - `cost.enabled` — show cost estimates in the TUI, CLI result, and run report.
 - `cost.currency` — currently `USD`.

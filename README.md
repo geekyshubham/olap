@@ -154,7 +154,7 @@ A persistent context bar at the top of the terminal displays:
 Configure everything without leaving the terminal:
 - Switch orchestrator and worker models on the fly
 - Choose from supported CLI adapters
-- Set access controls and execution modes
+- Set access controls (approval, sandbox, network)
 - Toggle themes
 
 ### Graphify and Headroom Shortcuts
@@ -198,7 +198,7 @@ npm link
 ```
 
 **Prerequisites:**
-- Node.js 18+ (Node 22+ recommended)
+- Node.js 22+
 - At least one supported CLI adapter installed and authenticated (Claude Code, Gemini CLI, Grok CLI, Codex CLI, or Kiro CLI) on your system `PATH`.
 
 ---
@@ -260,8 +260,8 @@ access:
   sandbox: workspace-write
   network: false
 subagents:
-  enabled: false
-  max_parallel: 1
+  enabled: false   # reserved — ignored at runtime today
+  max_parallel: 1  # reserved — ignored at runtime today
 architect:
   context_pack_max_tokens: 32000
 worker:
@@ -285,6 +285,13 @@ validators:
 ```
 
 For a comprehensive guide on all configuration keys, see [docs/config.md](docs/config.md).
+
+**Runtime behavior (important):**
+
+- OLAP always spawns live orchestrator and worker CLIs in `build`/`workflow` mode.
+- Orchestrator reviews must be schema-valid JSON printed by the orchestrator CLI. **Missing review JSON always fails the run**, regardless of `architect.require_valid_reviews`. OLAP does not infer pass/fail from worker exit codes or git diffs in live runs (`deriveReview` is unit-test-only).
+- Token usage and cost estimates come **only** from `usage` fields in CLI JSON output — not from output length or heuristics.
+- `subagents.enabled` / `subagents.max_parallel` are reserved for future parallel workers and are ignored today.
 
 ---
 
@@ -368,7 +375,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 - [ ] Cost dashboard: real-time spend tracking per session
 - [ ] Adapter chaining: route specific task types to specific workers
-- [ ] Local model support via Ollama
+- [x] Local model support via Ollama (plan/review; text-only worker profile)
 - [ ] Web UI companion
 - [ ] Session replay and audit logs
 

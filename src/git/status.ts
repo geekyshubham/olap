@@ -260,10 +260,18 @@ export async function getRunDiffSummary(
   const inside = await git(["rev-parse", "--is-inside-work-tree"], cwd, timeoutMs);
   if (!inside || inside.trim() !== "true") return { ...EMPTY_DIFF_SUMMARY };
 
+  const trimmedBaseline = baselineRef.trim();
+  if (!trimmedBaseline) return getDiffSummary(cwd, timeoutMs);
+
+  const baselineValid = await git(["rev-parse", "--verify", trimmedBaseline], cwd, timeoutMs);
+  if (!baselineValid?.trim()) return getDiffSummary(cwd, timeoutMs);
+
   const currentHead = await getHeadOid(cwd, timeoutMs);
   const committed =
-    currentHead && currentHead !== baselineRef
-      ? parseNumstat((await git(["diff", "--numstat", `${baselineRef}..HEAD`], cwd, timeoutMs)) ?? "")
+    currentHead && currentHead !== trimmedBaseline
+      ? parseNumstat(
+          (await git(["diff", "--numstat", `${trimmedBaseline}..HEAD`], cwd, timeoutMs)) ?? "",
+        )
       : [];
 
   const working = await getDiffSummary(cwd, timeoutMs);

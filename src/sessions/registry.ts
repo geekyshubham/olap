@@ -28,11 +28,64 @@ function taskSummary(task: string, maxLen = 120): string {
   return trimmed.length <= maxLen ? trimmed : `${trimmed.slice(0, maxLen - 3)}...`;
 }
 
+function isSessionStatus(value: unknown): value is SessionRecord["status"] {
+  return value === "active" || value === "completed" || value === "failed";
+}
+
+/** Coerce partial/corrupt on-disk records into a valid SessionRecord shape. */
+export function normalizeSessionRecord(
+  raw: unknown,
+  fallback: { id: string; now: Date },
+): SessionRecord {
+  const partial = (raw && typeof raw === "object" ? raw : {}) as Partial<SessionRecord>;
+  const runIds = Array.isArray(partial.run_ids)
+    ? partial.run_ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  const createdAt =
+    typeof partial.created_at === "string" && partial.created_at.length > 0
+      ? partial.created_at
+      : fallback.now.toISOString();
+  const updatedAt =
+    typeof partial.updated_at === "string" && partial.updated_at.length > 0
+      ? partial.updated_at
+      : createdAt;
+
+  return {
+    id: typeof partial.id === "string" && partial.id.length > 0 ? partial.id : fallback.id,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    task_summary:
+      typeof partial.task_summary === "string" && partial.task_summary.length > 0
+        ? partial.task_summary
+        : "",
+    status: isSessionStatus(partial.status) ? partial.status : "active",
+    run_ids: runIds,
+    adapter:
+      partial.adapter === "none" ||
+      partial.adapter === "grok" ||
+      partial.adapter === "claude" ||
+      partial.adapter === "gemini" ||
+      partial.adapter === "codex" ||
+      partial.adapter === "kiro" ||
+      partial.adapter === "ollama"
+        ? partial.adapter
+        : "none",
+  };
+}
+
 async function readIndex(cwd: string): Promise<SessionRecord[]> {
   try {
     const text = await readFile(indexPath(cwd), "utf8");
-    const parsed = JSON.parse(text) as SessionRecord[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(text) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry, index) =>
+        normalizeSessionRecord(entry, {
+          id: `unknown-${index}`,
+          now: new Date(0),
+        }),
+      )
+      .filter((session) => session.id.length > 0 && !session.id.startsWith("unknown-"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -43,6 +96,10 @@ async function writeIndex(cwd: string, sessions: SessionRecord[]): Promise<void>
   const dir = sessionsRoot(cwd);
   await mkdir(dir, { recursive: true });
   await writeFile(indexPath(cwd), JSON.stringify(sessions, null, 2) + "\n", "utf8");
+}
+
+function appendRunId(runIds: string[], runId: string): string[] {
+  return runIds.includes(runId) ? runIds : [...runIds, runId];
 }
 
 export async function registerSession(options: {
@@ -62,9 +119,9 @@ export async function registerSession(options: {
   let record: SessionRecord;
   try {
     const text = await readFile(existingPath, "utf8");
-    record = JSON.parse(text) as SessionRecord;
+    record = normalizeSessionRecord(JSON.parse(text) as unknown, { id: sessionId, now });
     record.updated_at = now.toISOString();
-    record.run_ids = [...record.run_ids, options.runId];
+    record.run_ids = appendRunId(record.run_ids, options.runId);
     record.adapter = options.adapter;
     record.task_summary = taskSummary(options.task);
     record.status = "active";
@@ -98,7 +155,7 @@ export async function getSession(
 ): Promise<SessionRecord | undefined> {
   try {
     const text = await readFile(sessionPath(cwd, sessionId), "utf8");
-    return JSON.parse(text) as SessionRecord;
+    return normalizeSessionRecord(JSON.parse(text) as unknown, { id: sessionId, now: new Date() });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -123,7 +180,10 @@ export async function completeSession(
   await writeFile(sessionPath(cwd, sessionId), JSON.stringify(record, null, 2) + "\n", "utf8");
 
   const index = await readIndex(cwd);
-  const updated = index.map((session) => (session.id === sessionId ? record : session));
+  const found = index.some((session) => session.id === sessionId);
+  const updated = found
+    ? index.map((session) => (session.id === sessionId ? record : session))
+    : [...index, record];
   updated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   await writeIndex(cwd, updated);
   return record;
