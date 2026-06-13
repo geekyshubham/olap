@@ -1,17 +1,30 @@
 import { readFileSync } from "node:fs";
 
-export function readPackageVersion(): string {
+interface PackageMeta {
+  name: string;
+  version: string;
+}
+
+function readPackageMeta(): PackageMeta {
   try {
     const packageJson = JSON.parse(
       readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { version?: unknown };
-    if (typeof packageJson.version === "string") {
-      return packageJson.version;
-    }
+    ) as { name?: unknown; version?: unknown };
+    return {
+      name: typeof packageJson.name === "string" ? packageJson.name : "@geekyshubham/olap",
+      version: typeof packageJson.version === "string" ? packageJson.version : "0.0.0",
+    };
   } catch {
     // Keep the CLI usable if package metadata is unavailable in a local build.
+    return { name: "@geekyshubham/olap", version: "0.0.0" };
   }
-  return "0.0.0";
 }
 
-export const VERSION = readPackageVersion();
+const META = readPackageMeta();
+
+export const VERSION = META.version;
+export const PACKAGE_NAME = META.name;
+
+export function readPackageVersion(): string {
+  return META.version;
+}

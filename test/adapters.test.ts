@@ -3,20 +3,21 @@ import { detectAdapters, findBinary, pickAdapter } from "../src/adapters/detect.
 import { createTempDir, writeFakeBinary } from "./helpers.js";
 
 describe("adapters", () => {
-  it("detects fake grok/claude/gemini/codex binaries on PATH", async () => {
+  it("detects fake grok/claude/gemini/codex/kiro binaries on PATH", async () => {
     const binDir = await createTempDir("olap-bin-");
     await Promise.all([
       writeFakeBinary(binDir, "grok"),
       writeFakeBinary(binDir, "claude"),
       writeFakeBinary(binDir, "gemini"),
       writeFakeBinary(binDir, "codex"),
+      writeFakeBinary(binDir, "kiro-cli"),
     ]);
 
     const pathEnv = `${binDir}:/usr/bin:/bin`;
     const detections = await detectAdapters(pathEnv);
     const detected = detections.filter((d) => d.detected).map((d) => d.id);
 
-    expect(detected).toEqual(["grok", "claude", "gemini", "codex"]);
+    expect(detected).toEqual(["grok", "claude", "gemini", "codex", "kiro"]);
   });
 
   it("findBinary returns undefined when missing", async () => {
