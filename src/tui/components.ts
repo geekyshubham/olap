@@ -271,6 +271,7 @@ export class ConversationComponent implements Component {
   private activityAt = 0;
   /** Lines scrolled up from the bottom. 0 = following the latest output. */
   private scrollOffset = 0;
+  private messageAnchors: number[] = [];
   /** Max scroll offset from the most recent render (so scroll keys can clamp). */
   private lastMaxOffset = 0;
   /** Chrome rows reserved outside the transcript (set by the app). */
@@ -461,6 +462,38 @@ export class ConversationComponent implements Component {
   pageDown(): boolean { return this.scrollDown(Math.max(1, this.viewportHeight() - 1)); }
   scrollToBottom(): void { this.scrollOffset = 0; }
 
+  /** Jump the viewport up to the previous (older) message boundary. */
+  scrollToPrevMessage(): boolean {
+    if (this.lastMaxOffset <= 0 || this.messageAnchors.length === 0) return false;
+    const currentTop = this.lastMaxOffset - this.scrollOffset;
+    let target: number | undefined;
+    for (const anchor of this.messageAnchors) {
+      if (anchor < currentTop) target = anchor;
+      else break;
+    }
+    if (target === undefined) return false;
+    const next = Math.min(this.lastMaxOffset, Math.max(0, this.lastMaxOffset - target));
+    if (next === this.scrollOffset) return false;
+    this.scrollOffset = next;
+    return true;
+  }
+
+  /** Jump the viewport down to the next (newer) message boundary, or to the bottom. */
+  scrollToNextMessage(): boolean {
+    if (this.lastMaxOffset <= 0 || this.messageAnchors.length === 0) return false;
+    const currentTop = this.lastMaxOffset - this.scrollOffset;
+    const target = this.messageAnchors.find((anchor) => anchor > currentTop);
+    if (target === undefined) {
+      if (this.scrollOffset === 0) return false;
+      this.scrollOffset = 0;
+      return true;
+    }
+    const next = Math.min(this.lastMaxOffset, Math.max(0, this.lastMaxOffset - target));
+    if (next === this.scrollOffset) return false;
+    this.scrollOffset = next;
+    return true;
+  }
+
   invalidate(): void {}
 
   private renderEntry(entry: ConversationEntry, width: number): string[] {
@@ -628,10 +661,23 @@ export class ConversationComponent implements Component {
   render(width: number): string[] {
     this.lastWidth = width;
     const bodyLines: string[] = [];
+    const messageAnchors: number[] = [];
     const isDetail = (e: ConversationEntry): boolean =>
       e.kind === "agent" || e.kind === "output" || e.kind === "command";
     if (this.verbose) {
-      for (const entry of this.entries) bodyLines.push(...this.renderEntry(entry, width));
+      let inDetailRun = false;
+      for (const entry of this.entries) {
+        if (isDetail(entry)) {
+          if (!inDetailRun) {
+            messageAnchors.push(bodyLines.length);
+            inDetailRun = true;
+          }
+        } else {
+          inDetailRun = false;
+          messageAnchors.push(bodyLines.length);
+        }
+        bodyLines.push(...this.renderEntry(entry, width));
+      }
     } else {
       let detail = 0;
       const flush = (): void => {
@@ -647,14 +693,17 @@ export class ConversationComponent implements Component {
       };
       for (const entry of this.entries) {
         if (isDetail(entry)) {
+          if (detail === 0) messageAnchors.push(bodyLines.length);
           detail += this.renderEntry(entry, width).length;
           continue;
         }
         flush();
+        messageAnchors.push(bodyLines.length);
         bodyLines.push(...this.renderEntry(entry, width));
       }
       flush();
     }
+    this.messageAnchors = messageAnchors;
     let statusLine: string | undefined;
     if (this.running) {
       const t = this.theme;
@@ -680,7 +729,9 @@ export class ConversationComponent implements Component {
       this.scrollOffset = 0;
       return all;
     }
-    const maxOffset = all.length - H;
+    // +1 keeps the very first line reachable: when scrolled to the top a bottom
+    // "↓ more" hint still occupies one row, shrinking the content area to H-1.
+    const maxOffset = all.length - H + 1;
     this.lastMaxOffset = maxOffset;
     if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
     if (this.scrollOffset < 0) this.scrollOffset = 0;

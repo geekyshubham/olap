@@ -711,6 +711,18 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       tui.requestRender();
       return { consume: true };
     }
+    // Step through the transcript one message at a time (input empty only, so Tab still
+    // completes slash commands while typing). Tab = previous/older, Shift+Tab = next/newer.
+    if (matchesKey(data, "shift+tab") && editor.getText() === "" && conversation.canScroll()) {
+      conversation.scrollToNextMessage();
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "tab") && editor.getText() === "" && conversation.canScroll()) {
+      conversation.scrollToPrevMessage();
+      tui.requestRender();
+      return { consume: true };
+    }
     const action = resolveGlobalKey(data);
     if (action?.type === "clear") {
       doClear();

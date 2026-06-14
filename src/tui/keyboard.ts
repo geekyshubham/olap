@@ -44,6 +44,7 @@ export const SHORTCUT_HINTS = [
   "/mode",
   "/theme",
   "↑/↓ scroll",
+  "Tab msg",
   "^L clear",
   "^C quit",
 ] as const;
@@ -52,6 +53,7 @@ export const SHORTCUT_HINTS_RUNNING = [
   "Esc cancel",
   "^C cancel run",
   "↑/↓ scroll",
+  "Tab msg",
 ] as const;
 
 export const HELP_LINES = [
@@ -78,6 +80,7 @@ export const HELP_LINES = [
   "Shortcuts:",
   "  Enter       Run the task in the editor",
   "  ↑/↓        Scroll the transcript when the input is empty (PgUp/PgDn also work)",
+  "  Tab / ⇧Tab Jump to the previous / next message (when the input is empty)",
   "  Ctrl+L      Clear the conversation",
   "  Ctrl+C      Cancel a running task, or quit when idle",
   "  Esc         Close an overlay / cancel a running task",

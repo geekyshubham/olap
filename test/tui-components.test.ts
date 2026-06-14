@@ -472,3 +472,49 @@ describe("verbose collapse", () => {
     expect(convo.render(120).join("\n")).toContain("worker doing the work");
   });
 });
+
+describe("transcript message navigation", () => {
+  const theme = getTheme();
+
+  it("steps through messages with prev/next and stops at the ends", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 5 });
+    convo.setReservedRows(0);
+    for (let i = 1; i <= 8; i += 1) convo.addUser(`MSG${i}`);
+
+    // Render once so anchors + max offset are known; the transcript must overflow.
+    convo.render(60);
+    expect(convo.canScroll()).toBe(true);
+
+    // Walk up message-by-message until we reach the top.
+    let up = 0;
+    while (convo.scrollToPrevMessage()) {
+      convo.render(60);
+      up += 1;
+      if (up > 100) break;
+    }
+    expect(up).toBeGreaterThan(0);
+    expect(convo.scrollToPrevMessage()).toBe(false);
+    expect(convo.render(60).join("\n")).toContain("MSG1");
+
+    // Walk back down to the bottom.
+    let down = 0;
+    while (convo.scrollToNextMessage()) {
+      convo.render(60);
+      down += 1;
+      if (down > 100) break;
+    }
+    expect(down).toBeGreaterThan(0);
+    expect(convo.scrollToNextMessage()).toBe(false);
+    expect(convo.render(60).join("\n")).toContain("MSG8");
+  });
+
+  it("does nothing when the transcript fits on screen", () => {
+    const convo = new ConversationComponent(theme, { rows: () => 40 });
+    convo.setReservedRows(0);
+    convo.addUser("only one");
+    convo.render(60);
+    expect(convo.canScroll()).toBe(false);
+    expect(convo.scrollToPrevMessage()).toBe(false);
+    expect(convo.scrollToNextMessage()).toBe(false);
+  });
+});
