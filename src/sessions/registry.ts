@@ -23,6 +23,14 @@ export function createSessionId(now = new Date()): string {
   return `sess-${stamp}-${suffix}`;
 }
 
+/** Lines printed when a session can be resumed from the CLI. */
+export function formatSessionResumeMessage(sessionId: string): string[] {
+  return [
+    `Session: ${sessionId}`,
+    `Resume:  olap run --session-id ${sessionId} "your next task"`,
+  ];
+}
+
 function taskSummary(task: string, maxLen = 120): string {
   const trimmed = task.trim().replace(/\s+/g, " ");
   return trimmed.length <= maxLen ? trimmed : `${trimmed.slice(0, maxLen - 3)}...`;

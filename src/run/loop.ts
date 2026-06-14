@@ -1,5 +1,7 @@
 import {
+  architectCommandForStep,
   buildRoleCommands,
+  permissionMode,
   summarizeCommandShell,
   withCommandPrompt,
 } from "../adapters/build.js";
@@ -18,6 +20,7 @@ import {
   getRepoStatus,
   getRunDiffSummary,
   getWorktreeChangeSignature,
+  meaningfulDiffFiles,
   type DiffSummary,
 } from "../git/status.js";
 import { runValidators } from "../validators/runner.js";
@@ -285,6 +288,20 @@ function buildContextBlock(
   };
 }
 
+function workerCancelMessage(config: OlapConfig, aborted: boolean): string {
+  if (aborted) {
+    return "Worker cancelled (run interrupted — Ctrl+C or abort signal).";
+  }
+  const grokMode = permissionMode(config.access);
+  if (grokMode !== "bypassPermissions") {
+    return (
+      `Worker cancelled (stopReason Cancelled). For unattended automation set ` +
+      `access.approval: never in olap.config.yaml (current grok permission mode: ${grokMode}).`
+    );
+  }
+  return "Worker cancelled (stopReason Cancelled). Re-run the task or inspect worker output in the run artifacts.";
+}
+
 /** Bound a plan for one-line event log messages (not the worker payload). */
 function capBrief(text: string): string {
   const trimmed = text.trim();
@@ -407,7 +424,13 @@ export async function runOrchestratedLoop(
 
   // Phase: plan (orchestrator)
   emit({ type: "phase", phase: "plan", label: `Orchestrator planning (${roles.orchestrator.model})` });
-  const planPrompt = buildPlanPrompt({ config, task: cleanedTask, direct, context: orchContext });
+  const planPrompt = buildPlanPrompt({
+    config,
+    task: cleanedTask,
+    direct,
+    context: orchContext,
+    orchestratorAdapter: roles.orchestrator.adapter,
+  });
   let planText = "";
 
   if (mode !== "plan" && !workerAvailable) {
@@ -530,10 +553,25 @@ export async function runOrchestratedLoop(
       const workerMessage = lastWorkerOk
         ? `${prefix}: completed (exit ${run.result.exitCode})`
         : `${prefix}: failed (${failReason})`;
+      if (cancelled) {
+        emit({ type: "error", error: workerCancelMessage(config, run.result.aborted) });
+      }
       if (runBaselineHead) {
         diff = await getRunDiff(options.cwd, runBaselineHead).catch(() => ({ ...EMPTY_DIFF_SUMMARY }));
       } else {
         diff = await getDiffSummary(options.cwd).catch(() => ({ ...EMPTY_DIFF_SUMMARY }));
+      }
+      if (
+        !cancelled &&
+        diff.changed &&
+        meaningfulDiffFiles(diff.files).length === 0 &&
+        diff.files.length > 0
+      ) {
+        emit({
+          type: "error",
+          error:
+            "Worker only changed OLAP/tooling files (olap.config.yaml, .impeccable/, etc.), not application code.",
+        });
       }
       emit({ type: "diff", diff });
 
@@ -779,8 +817,10 @@ async function produceReview(args: {
     workerOk: args.workerOk,
     diffText: formatDiffSummary(args.diff),
     fileList: args.diff.files.map((f) => f.path),
+    orchestratorAdapter: args.architectBase.adapter,
   });
-  const reviewCommand = withCommandPrompt(args.architectBase, reviewPrompt, {
+  const reviewBase = architectCommandForStep(args.architectBase, config, "review");
+  const reviewCommand = withCommandPrompt(reviewBase, reviewPrompt, {
     step: "review",
     executed: true,
   });
@@ -820,6 +860,7 @@ async function produceReview(args: {
     workerOk: args.workerOk,
     changed: args.diff.changed,
     changeSummary: formatDiffSummary(args.diff),
+    orchestratorAdapter: args.architectBase.adapter,
   });
   if (!fromOrchestrator) {
     args.emit({

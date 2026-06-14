@@ -416,6 +416,7 @@ describe("run summary block", () => {
       insertions: 10,
       deletions: 3,
       runId: "RID1",
+      sessionId: "sess-20260614T120000-abc123",
       workerCancelled: false,
     });
     const joined = convo.render(120).join("\n");
@@ -424,6 +425,8 @@ describe("run summary block", () => {
     expect(joined).toContain("app/intel/views.py");
     expect(joined).toContain("+10");
     expect(joined).toContain("RID1/final-report.md");
+    expect(joined).toContain("sess-20260614T120000-abc123");
+    expect(joined).toContain("--session-id");
   });
 
   it("marks cancelled runs and worker cancellation", () => {
@@ -436,6 +439,7 @@ describe("run summary block", () => {
       insertions: 0,
       deletions: 0,
       runId: "RID2",
+      sessionId: "sess-20260614T120000-xyz789",
       workerCancelled: true,
     });
     const joined = convo.render(120).join("\n");

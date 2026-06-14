@@ -17,7 +17,12 @@ import { getRepoStatus } from "../git/status.js";
 import { createRunId, writeRunArtifacts } from "../run/artifacts.js";
 import { runOrchestratedLoop, terminalSessionStatus, type LoopUpdate } from "../run/loop.js";
 import { buildRunPlan } from "../run/routing.js";
-import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
+import {
+  completeSession,
+  createSessionId,
+  formatSessionResumeMessage,
+  registerSession,
+} from "../sessions/registry.js";
 import {
   buildToolInvocation,
   formatToolCommand,
@@ -70,6 +75,8 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   let config = await readConfig(cwd);
   setTheme(config.ui.theme);
   let theme: Theme = getTheme();
+  const sessionId = createSessionId();
+  let sessionHasRuns = false;
 
   const [detections, repo] = await Promise.all([detectAdapters(), getRepoStatus(cwd)]);
 
@@ -529,7 +536,6 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
 
     const runId = createRunId();
     conversation.setRunId(runId);
-    const sessionId = createSessionId();
     abortController = new AbortController();
 
     try {
@@ -570,6 +576,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       });
       session =
         (await completeSession(cwd, sessionId, terminalSessionStatus(result))) ?? session;
+      sessionHasRuns = true;
       await writeRunArtifacts({
         cwd,
         runId,
@@ -594,6 +601,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
         insertions: result.diff.insertions,
         deletions: result.diff.deletions,
         runId,
+        sessionId,
         workerCancelled: result.summary.worker_cancelled ?? false,
       });
 
@@ -639,6 +647,12 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
     stopSpinner();
     abortController?.abort();
     tui.stop();
+    if (sessionHasRuns) {
+      console.log("");
+      for (const line of formatSessionResumeMessage(sessionId)) {
+        console.log(line);
+      }
+    }
     process.exit(0);
   };
 

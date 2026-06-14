@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  architectCommandForStep,
   buildArchitectCommand,
   buildWorkerCommand,
   effortArgs,
@@ -55,6 +56,21 @@ describe("kiro adapter", () => {
     expect(untrusted.argv).toContain("--trust-tools=");
   });
 
+  it("disables kiro tools for architect review invocations", () => {
+    const plan = buildArchitectCommand("kiro", "plan", DEFAULT_CONFIG, undefined, "plan");
+    const review = buildArchitectCommand("kiro", "review", DEFAULT_CONFIG, undefined, "review");
+    expect(plan.argv).toContain("--trust-tools=fs_read");
+    expect(review.argv).toContain("--trust-tools=");
+
+    const patched = architectCommandForStep(
+      finalizeAdapterCommand(plan),
+      DEFAULT_CONFIG,
+      "review",
+    );
+    expect(patched.argv).toContain("--trust-tools=");
+    expect(patched.argv).not.toContain("--trust-tools=fs_read");
+  });
+
   it("kiroTrustArgs covers the policy table", () => {
     const base: AccessConfig = {
       approval: "on-failure",
@@ -62,6 +78,7 @@ describe("kiro adapter", () => {
       network: false,
     };
     expect(kiroTrustArgs(base, "architect")).toEqual(["--trust-tools=fs_read"]);
+    expect(kiroTrustArgs(base, "architect", "review")).toEqual(["--trust-tools="]);
     expect(kiroTrustArgs(base, "worker")).toEqual(["--trust-tools=fs_read,fs_write"]);
     expect(kiroTrustArgs({ ...base, sandbox: "danger-full-access" }, "worker")).toEqual([
       "--trust-all-tools",

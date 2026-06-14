@@ -1,6 +1,6 @@
 import { interpretAgentValue } from "./agent-output.js";
 import { validateArchitectReview } from "../validators/review-schema.js";
-import type { ArchitectReview, ArchitectVerdict, OlapConfig } from "../types.js";
+import type { AdapterId, ArchitectReview, ArchitectVerdict, OlapConfig } from "../types.js";
 
 /** Scan text for top-level JSON objects ({...}) and return them in order. */
 export function findJsonObjects(text: string): string[] {
@@ -76,10 +76,22 @@ export function extractPlanText(stdout: string, fallback: string): string {
 function coerceVerdict(value: unknown): ArchitectVerdict | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim().toLowerCase();
-  if (v === "pass" || v === "approve" || v === "approved" || v === "accept") return "pass";
+  if (v.includes("|")) return undefined;
+  if (v === "pass" || v === "approve" || v === "approved" || v === "accept" || v === "ok") {
+    return "pass";
+  }
   if (v === "revise" || v === "changes" || v === "rework" || v === "retry") return "revise";
-  if (v === "fail" || v === "blocked" || v === "reject") return "fail";
+  if (v === "fail" || v === "blocked" || v === "reject" || v === "failed") return "fail";
   return undefined;
+}
+
+function verdictFromRecord(raw: Record<string, unknown>): ArchitectVerdict | undefined {
+  return (
+    coerceVerdict(raw.verdict) ??
+    coerceVerdict(raw.decision) ??
+    coerceVerdict(raw.result) ??
+    coerceVerdict(raw.status)
+  );
 }
 
 /** Coerce a loosely-shaped parsed object into a schema-valid ArchitectReview. */
@@ -88,7 +100,7 @@ export function coerceReview(
   iteration: number,
   config: OlapConfig,
 ): ArchitectReview | undefined {
-  const verdict = coerceVerdict(raw.verdict);
+  const verdict = verdictFromRecord(raw);
   if (!verdict) return undefined;
 
   const findingsRaw = Array.isArray(raw.findings) ? raw.findings : [];
@@ -138,6 +150,7 @@ export interface DerivedReviewInput {
   workerOk: boolean;
   changed: boolean;
   changeSummary: string;
+  orchestratorAdapter?: AdapterId;
 }
 
 /**
@@ -182,24 +195,217 @@ export interface ReviewExtraction {
   fromOrchestrator: boolean;
 }
 
+const AGENT_TEXT_KEYS = ["text", "message", "content", "response", "output"] as const;
+
+/** Unwrap ```json fences so embedded review objects can be scanned. */
+function stripCodeFences(text: string): string {
+  return text.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (_, inner: string) => inner.trim());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pushParsedObject(value: unknown, out: Record<string, unknown>[]): void {
+  if (!isRecord(value)) return;
+  out.push(value);
+  for (const key of AGENT_TEXT_KEYS) {
+    const nested = value[key];
+    if (typeof nested !== "string" || !nested.trim()) continue;
+    const unfenced = stripCodeFences(nested.trim());
+    try {
+      pushParsedObject(JSON.parse(unfenced), out);
+    } catch {
+      for (const obj of findJsonObjects(unfenced)) {
+        try {
+          pushParsedObject(JSON.parse(obj), out);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+  const nestedReview = value.review;
+  if (isRecord(nestedReview)) out.push(nestedReview);
+}
+
+/** Strip ANSI color / style sequences from terminal CLI output. */
+export function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function inferVerdictFromProse(text: string): ArchitectVerdict | undefined {
+  const normalized = stripAnsi(text).toLowerCase();
+
+  if (
+    /\bpass\s*\|\s*revise\s*\|\s*fail\b/.test(normalized) ||
+    /"verdict"\s*:\s*"[^"]*\|/.test(normalized)
+  ) {
+    return undefined;
+  }
+
+  const jsonVerdict = normalized.match(/"verdict"\s*:\s*"(pass|revise|fail)"/);
+  if (jsonVerdict) return coerceVerdict(jsonVerdict[1]);
+
+  const labeled = normalized.match(/\bverdict\s*[:=]\s*(pass|revise|fail|blocked|approve|approved)/);
+  if (labeled) return coerceVerdict(labeled[1]);
+
+  if (/\bblocked\b/.test(normalized) || /\bscope mismatch\b/.test(normalized)) return "fail";
+  if (
+    /\bneeds (another|more) (iteration|pass|round)\b/.test(normalized) ||
+    /\b(revise|rework|retry)\b/.test(normalized)
+  ) {
+    return "revise";
+  }
+  if (
+    /\b(looks good|ship it|accept(?:ed)?|approved)\b/.test(normalized) ||
+    (/\bpass(?:es|ed)?\b/.test(normalized) && !/\bfail/.test(normalized))
+  ) {
+    return "pass";
+  }
+  return undefined;
+}
+
+function extractSummaryFromProse(text: string): string {
+  const clean = stripAnsi(text).replace(/\r/g, "").trim();
+  const blocked = clean.match(/BLOCKED[^\n]*/i);
+  if (blocked) return blocked[0].trim();
+
+  const conclusion = clean.match(/Conclusion:\s*\n?([^\n]+)/i);
+  if (conclusion?.[1]?.trim()) return conclusion[1].trim();
+
+  for (const line of clean.split("\n")) {
+    const trimmed = line.trim();
+    if (
+      trimmed.length > 12 &&
+      !/^searching\b/i.test(trimmed) &&
+      !/^i will run\b/i.test(trimmed) &&
+      !/^\(using tool:/i.test(trimmed)
+    ) {
+      return trimmed.length > 240 ? `${trimmed.slice(0, 237)}...` : trimmed;
+    }
+  }
+  return "Orchestrator review (parsed from plain text).";
+}
+
+function coerceFinding(
+  value: unknown,
+): ArchitectReview["findings"][number] | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!("severity" in value) || !("message" in value) || "verdict" in value) return undefined;
+  const severity =
+    value.severity === "error" || value.severity === "warn" || value.severity === "info"
+      ? value.severity
+      : "info";
+  const message = typeof value.message === "string" ? value.message.trim() : "";
+  return message ? { severity, message } : undefined;
+}
+
+function collectLooseFindings(stdout: string): ArchitectReview["findings"] {
+  const findings: ArchitectReview["findings"] = [];
+  const seen = new Set<string>();
+  for (const parsed of collectReviewCandidates(stdout)) {
+    const finding = coerceFinding(parsed);
+    if (finding && !seen.has(finding.message)) {
+      seen.add(finding.message);
+      findings.push(finding);
+    }
+  }
+  for (const obj of findJsonObjects(stripAnsi(stdout))) {
+    try {
+      const finding = coerceFinding(JSON.parse(obj));
+      if (finding && !seen.has(finding.message)) {
+        seen.add(finding.message);
+        findings.push(finding);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  for (const line of stripAnsi(stdout).split("\n")) {
+    const bullet = line.match(/^\s*[-*]\s+(.+)/);
+    if (!bullet) continue;
+    const message = bullet[1].trim();
+    if (message.length < 12 || seen.has(message)) continue;
+    seen.add(message);
+    const severity = /error|fail|blocked|vulnerab/i.test(message)
+      ? "error"
+      : /warn/i.test(message)
+        ? "warn"
+        : "info";
+    findings.push({ severity, message });
+  }
+  return findings.slice(0, 12);
+}
+
+/** Build a schema-valid review from plain-text orchestrator output (kiro, ollama). */
+export function coerceReviewFromProse(
+  stdout: string,
+  iteration: number,
+  config: OlapConfig,
+): ArchitectReview | undefined {
+  const verdict = inferVerdictFromProse(stdout);
+  if (!verdict) return undefined;
+
+  const findings = collectLooseFindings(stdout);
+  const summary = extractSummaryFromProse(stdout);
+  return coerceReview(
+    {
+      verdict,
+      summary,
+      findings,
+      next_actions: [],
+      token_budget_used: 0,
+    },
+    iteration,
+    config,
+  );
+}
+
+/** Collect every JSON object that might contain a review verdict from noisy CLI stdout. */
+export function collectReviewCandidates(stdout: string): Record<string, unknown>[] {
+  const normalized = stripCodeFences(stripAnsi(stdout).trim());
+  const candidates: Record<string, unknown>[] = [];
+
+  try {
+    pushParsedObject(JSON.parse(normalized), candidates);
+  } catch {
+    for (const obj of findJsonObjects(normalized)) {
+      try {
+        pushParsedObject(JSON.parse(obj), candidates);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  for (const line of normalized.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      pushParsedObject(JSON.parse(trimmed), candidates);
+    } catch {
+      // ignore
+    }
+  }
+
+  return candidates;
+}
+
 /** Parse orchestrator review output; derive a signal-based review only when tests need a fallback. */
 export function extractReview(
   stdout: string,
   derived: DerivedReviewInput,
 ): ReviewExtraction {
-  const objects = findJsonObjects(stdout);
+  const candidates = collectReviewCandidates(stdout);
   // Prefer the last object that mentions a verdict (CLIs often print logs first).
-  for (const obj of [...objects].reverse()) {
-    try {
-      const parsed = JSON.parse(obj) as Record<string, unknown>;
-      const candidate = "verdict" in parsed ? parsed : (parsed.review as Record<string, unknown>);
-      if (candidate && typeof candidate === "object") {
-        const review = coerceReview(candidate, derived.iteration, derived.config);
-        if (review) return { review, fromOrchestrator: true };
-      }
-    } catch {
-      // keep scanning
-    }
+  for (const parsed of [...candidates].reverse()) {
+    const review = coerceReview(parsed, derived.iteration, derived.config);
+    if (review) return { review, fromOrchestrator: true };
   }
+
+  const proseReview = coerceReviewFromProse(stdout, derived.iteration, derived.config);
+  if (proseReview) return { review: proseReview, fromOrchestrator: true };
+
   return { review: deriveReview(derived), fromOrchestrator: false };
 }

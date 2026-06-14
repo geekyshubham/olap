@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   coerceReview,
+  coerceReviewFromProse,
+  collectReviewCandidates,
   deriveReview,
   extractPlanText,
   extractReview,
@@ -78,6 +80,89 @@ describe("extractReview", () => {
     );
     expect(out.fromOrchestrator).toBe(true);
     expect(out.review.verdict).toBe("revise");
+  });
+
+  it("extracts review JSON wrapped in grok agent text fields", () => {
+    const wrapped = JSON.stringify({
+      text: '{"schema_version":1,"iteration":1,"verdict":"pass","summary":"Looks good.","findings":[{"severity":"info","message":"ok"}],"next_actions":[],"token_budget_used":12}',
+      usage: { input_tokens: 90, output_tokens: 45 },
+    });
+    const out = extractReview(wrapped, derived);
+    expect(out.fromOrchestrator).toBe(true);
+    expect(out.review.verdict).toBe("pass");
+    expect(out.review.summary).toBe("Looks good.");
+  });
+
+  it("extracts review JSON from markdown code fences", () => {
+    const stdout = [
+      "Here is the review:",
+      "```json",
+      '{"schema_version":1,"iteration":1,"verdict":"pass","summary":"Ship it.","findings":[],"next_actions":[],"token_budget_used":0}',
+      "```",
+    ].join("\n");
+    const out = extractReview(stdout, derived);
+    expect(out.fromOrchestrator).toBe(true);
+    expect(out.review.verdict).toBe("pass");
+  });
+
+  it("collectReviewCandidates unwraps nested review objects", () => {
+    const candidates = collectReviewCandidates(
+      '{"review":{"verdict":"fail","summary":"blocked","findings":[{"severity":"error","message":"scope mismatch"}],"next_actions":["retry"]}}',
+    );
+    expect(candidates.some((c) => c.verdict === "fail")).toBe(true);
+  });
+
+  it("parses plain-text reviews for any orchestrator adapter", () => {
+    const stdout = [
+      "\u001b[38;5;141m> \u001b[0mBLOCKED — scope mismatch. The task does not apply to this repository.",
+      "Conclusion:",
+      "- There is no UI prompting users to run a *.py script.",
+      '{"severity":"warn","message":"Only dirty file is olap.config.yaml"}',
+    ].join("\n");
+    const out = extractReview(stdout, { ...derived, orchestratorAdapter: "kiro" });
+    expect(out.fromOrchestrator).toBe(true);
+    expect(out.review.verdict).toBe("fail");
+    expect(out.review.summary).toContain("BLOCKED");
+    expect(out.review.findings.some((f) => f.message.includes("olap.config.yaml"))).toBe(true);
+  });
+
+  it("parses prose reviews for JSON-first adapters when JSON is missing", () => {
+    const stdout = "Verdict: pass\nSummary: Worker changes look correct.";
+    const out = extractReview(stdout, { ...derived, orchestratorAdapter: "grok" });
+    expect(out.fromOrchestrator).toBe(true);
+    expect(out.review.verdict).toBe("pass");
+  });
+
+  it("does not infer reviews from unrelated prose", () => {
+    const out = extractReview("not json at all", { ...derived, orchestratorAdapter: "grok" });
+    expect(out.fromOrchestrator).toBe(false);
+    expect(out.review.summary).toContain("Derived review");
+  });
+
+  it("rejects schema-placeholder verdict copies", () => {
+    const out = extractReview(
+      '{"verdict":"pass | revise | fail","summary":"maybe","findings":[],"next_actions":[]}',
+      derived,
+    );
+    expect(out.fromOrchestrator).toBe(false);
+  });
+
+  it("accepts alternate verdict keys", () => {
+    const out = extractReview(
+      '{"decision":"approve","summary":"ok","findings":[{"severity":"info","message":"ok"}],"next_actions":[]}',
+      derived,
+    );
+    expect(out.fromOrchestrator).toBe(true);
+    expect(out.review.verdict).toBe("pass");
+  });
+
+  it("coerceReviewFromProse infers revise from rework language", () => {
+    const review = coerceReviewFromProse(
+      "Verdict: revise\n- Worker missed edge cases in auth callback.",
+      1,
+      config,
+    );
+    expect(review?.verdict).toBe("revise");
   });
 
   it("falls back to deriveReview when no JSON is present (unit-test helper only — live runs fail instead)", () => {

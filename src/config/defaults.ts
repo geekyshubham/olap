@@ -95,7 +95,7 @@ export const DEFAULT_CONFIG: OlapConfig = {
     output_budget_tokens: 4096,
     context_pack_max_tokens: 32000,
     review_schema_version: 1,
-    system_prompt_hint: "Return compact structured reviews. Avoid prose unless blocked.",
+    system_prompt_hint: "Be concise. Follow each phase's output-format instructions exactly.",
     require_valid_reviews: true,
     iteration_timeout_ms: 600_000,
   },

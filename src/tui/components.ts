@@ -241,6 +241,7 @@ export type ConversationEntry =
       insertions: number;
       deletions: number;
       runId: string;
+      sessionId: string;
       workerCancelled: boolean;
     };
 
@@ -366,6 +367,7 @@ export class ConversationComponent implements Component {
     insertions: number;
     deletions: number;
     runId: string;
+    sessionId: string;
     workerCancelled: boolean;
   }): void {
     this.push({ kind: "summary", ...summary });
@@ -650,6 +652,12 @@ export class ConversationComponent implements Component {
         lines.push(
           truncateToWidth(
             `      ${t.faint(`report .olap/runs/${s.runId}/final-report.md · brief …/brief.md`)}`,
+            width,
+          ),
+        );
+        lines.push(
+          truncateToWidth(
+            `      ${t.faint(`session ${s.sessionId} · resume: olap run --session-id ${s.sessionId}`)}`,
             width,
           ),
         );

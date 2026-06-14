@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   completeSession,
   createSessionId,
+  formatSessionResumeMessage,
   getSession,
   listSessions,
   registerSession,
@@ -12,6 +13,12 @@ import {
 import { createTempDir } from "./helpers.js";
 
 describe("session registry", () => {
+  it("formats resume instructions for the CLI", () => {
+    const lines = formatSessionResumeMessage("sess-20260614T120000-abc123");
+    expect(lines[0]).toBe("Session: sess-20260614T120000-abc123");
+    expect(lines[1]).toContain("--session-id sess-20260614T120000-abc123");
+  });
+
   it("registers a session under .olap/sessions", async () => {
     const cwd = await createTempDir();
     const sessionId = createSessionId(new Date("2026-06-12T10:00:00.000Z"));

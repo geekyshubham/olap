@@ -11,7 +11,12 @@ import {
   type LoopUpdate,
 } from "../run/loop.js";
 import { formatCostSummary } from "../run/cost.js";
-import { completeSession, createSessionId, registerSession } from "../sessions/registry.js";
+import {
+  completeSession,
+  createSessionId,
+  formatSessionResumeMessage,
+  registerSession,
+} from "../sessions/registry.js";
 import type {
   AdapterId,
   OlapConfig,
@@ -236,7 +241,9 @@ export async function runCommand(task: string, options: RunOptions = {}): Promis
 export function printRunResult(result: RunResult): void {
   console.log("");
   console.log(`Run ${result.runId} ${result.status}`);
-  console.log(`Session: ${result.sessionId}`);
+  for (const line of formatSessionResumeMessage(result.sessionId)) {
+    console.log(line);
+  }
   console.log(`Artifacts: ${result.dir}`);
   if (result.executed && result.iterations > 0) {
     console.log(`Changes: ${formatDiffSummary(result.diff)}`);

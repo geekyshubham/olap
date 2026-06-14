@@ -250,9 +250,22 @@ export async function getHeadOid(cwd = process.cwd(), timeoutMs = 4000): Promise
 }
 
 /** Paths OLAP writes for itself (run artifacts). These must never count as worker changes. */
-function isInternalArtifactPath(rawPath: string): boolean {
-  const path = rawPath.trim().replace(/^"|"$/g, "").replace(/^\.\//, "");
+export function isInternalArtifactPath(rawPath: string): boolean {
+  const path = normalizeDiffPath(rawPath);
   return path === ".olap" || path.startsWith(".olap/");
+}
+
+/** Tooling/meta paths workers should not edit and that do not count as task progress. */
+export function isWorkerMetaPath(rawPath: string): boolean {
+  const path = normalizeDiffPath(rawPath);
+  if (path === "olap.config.yaml") return true;
+  const metaPrefixes = [".impeccable/", ".playwright-cli/", ".cursor/", ".codex/"];
+  return metaPrefixes.some((prefix) => path.startsWith(prefix));
+}
+
+/** Application source changes only — excludes OLAP run artifacts and worker meta files. */
+export function meaningfulDiffFiles(files: DiffFile[]): DiffFile[] {
+  return files.filter((file) => !isInternalArtifactPath(file.path) && !isWorkerMetaPath(file.path));
 }
 
 /** Drop OLAP's own artifact paths from a numstat/untracked text block, returning trimmed lines. */

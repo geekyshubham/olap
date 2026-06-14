@@ -165,6 +165,55 @@ describe("E2E CLI", () => {
     expect(files).not.toContain("architect-reviews.jsonl");
   });
 
+  it("completes loop-mode build with grok orchestrator and grok worker", async () => {
+    const { dir, env } = await setupE2eRepo();
+    await patchConfig(dir, (config) => {
+      config.roles.orchestrator = {
+        adapter: "grok",
+        model: "grok-composer-2.5-fast",
+        effort: "default",
+      };
+      config.roles.worker = {
+        adapter: "grok",
+        model: "grok-composer-2.5-fast",
+        effort: "default",
+      };
+      config.worker.loop_policy = "always";
+      config.worker.max_iterations = 1;
+      config.worker.stop_on_first_pass = true;
+    });
+    const result = await runCli(
+      ["run", "implement fix for smoke.ts", "--mode", "build", "--quiet"],
+      { cwd: dir, env },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("completed");
+    expect(result.stdout).toMatch(/orchestrator 2 calls/);
+    expect(result.stdout).toMatch(/worker 1 calls/);
+
+    const runs = await readdir(join(dir, ".olap", "runs"));
+    const runDir = join(dir, ".olap", "runs", runs.sort().at(-1)!);
+    const configSnap = await readFile(join(runDir, "config-snapshot.yaml"), "utf8");
+    expect(configSnap).toContain("adapter: grok");
+    const reviewsText = await readFile(join(runDir, "architect-reviews.jsonl"), "utf8");
+    const review = JSON.parse(reviewsText.trim().split("\n")[0]!) as {
+      verdict: string;
+      summary: string;
+    };
+    expect(review.verdict).toBe("pass");
+    expect(review.summary).not.toContain("Derived review");
+    expect(review.summary).not.toContain("schema-valid review");
+
+    const commands = JSON.parse(
+      await readFile(join(runDir, "adapter-commands.json"), "utf8"),
+    ) as Array<{ adapter: string; phase: string; step?: string }>;
+    const grokCommands = commands.filter((c) => c.adapter === "grok");
+    expect(grokCommands.length).toBeGreaterThanOrEqual(3);
+    expect(grokCommands.filter((c) => c.phase === "architect").length).toBeGreaterThanOrEqual(2);
+    expect(grokCommands.some((c) => c.phase === "worker")).toBe(true);
+    expect(commands.some((c) => c.step === "review")).toBe(true);
+  });
+
   it("completes loop-mode build with orchestrator review JSON and CLI token usage", async () => {
     const { dir, env } = await setupE2eRepo();
     await patchConfig(dir, (config) => {

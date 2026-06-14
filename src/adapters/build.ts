@@ -118,7 +118,14 @@ function codexNetworkArgs(access: AccessConfig): string[] {
 }
 
 /** kiro-cli chat trust flags mapped from access (`--trust-all-tools` / `--trust-tools=`). */
-export function kiroTrustArgs(access: AccessConfig, phase: "architect" | "worker"): string[] {
+export function kiroTrustArgs(
+  access: AccessConfig,
+  phase: "architect" | "worker",
+  step?: "plan" | "review",
+): string[] {
+  if (phase === "architect" && step === "review") {
+    return ["--trust-tools="];
+  }
   if (phase === "architect" || access.sandbox === "read-only") {
     return ["--trust-tools=fs_read"];
   }
@@ -136,6 +143,7 @@ export function buildArchitectCommand(
   prompt: string,
   config: OlapConfig,
   detection?: AdapterDetection,
+  step: "plan" | "review" = "plan",
 ): AdapterCommand {
   const binary = adapterBinary(detection, adapterId);
   const model = modelForPhase(config, adapterId, "orchestrator");
@@ -222,7 +230,7 @@ export function buildArchitectCommand(
           binary,
           "chat",
           "--no-interactive",
-          ...kiroTrustArgs(config.access, "architect"),
+          ...kiroTrustArgs(config.access, "architect", step),
           ...modelAndEffortArgs(adapterId, model, effort),
           ...opts.extra_args,
           prompt,
@@ -393,6 +401,23 @@ export function withCommandPrompt(
     step: meta.step ?? command.step,
     executed: meta.executed ?? command.executed,
   });
+}
+
+/** Apply step-specific orchestrator flags (e.g. kiro review disables tools). */
+export function architectCommandForStep(
+  command: AdapterCommand,
+  config: OlapConfig,
+  step: "plan" | "review",
+): AdapterCommand {
+  if (step !== "review" || command.adapter !== "kiro") return command;
+  const rebuilt = buildArchitectCommand(
+    command.adapter,
+    command.argv.at(-1) ?? "",
+    config,
+    { id: command.adapter, detected: true, binary: command.binary },
+    "review",
+  );
+  return { ...rebuilt, step: command.step, executed: command.executed };
 }
 
 /**

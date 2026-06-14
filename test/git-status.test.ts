@@ -13,6 +13,8 @@ import {
   getRepoStatus,
   getRunDiffSummary,
   getWorktreeChangeSignature,
+  isWorkerMetaPath,
+  meaningfulDiffFiles,
   mergeDiffFiles,
   normalizeDiffPath,
   parseNumstat,
@@ -186,6 +188,17 @@ describe("git diff summary", () => {
     expect(file).toBeDefined();
     expect(file?.insertions).toBe(3);
     expect(summary.insertions).toBeGreaterThanOrEqual(3);
+  });
+
+  it("classifies worker meta paths separately from application code", () => {
+    expect(isWorkerMetaPath("olap.config.yaml")).toBe(true);
+    expect(isWorkerMetaPath(".impeccable/live/config.json")).toBe(true);
+    expect(isWorkerMetaPath("frontend/src/App.jsx")).toBe(false);
+    const files = meaningfulDiffFiles([
+      { path: "olap.config.yaml", insertions: 10, deletions: 0, binary: false },
+      { path: "app/intel/views.py", insertions: 2, deletions: 1, binary: false },
+    ]);
+    expect(files.map((f) => f.path)).toEqual(["app/intel/views.py"]);
   });
 
   it("never counts OLAP's own .olap/ artifacts as changes", async () => {
