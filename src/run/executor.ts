@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { syncOpenrouterProjectModel } from "../adapters/openrouter-rc.js";
 import type { AdapterCommand } from "../types.js";
 
 export interface ExecResult {
@@ -157,9 +158,15 @@ export function executeProcess(
  * Spawn an adapter command and stream its output. This is the bridge between
  * OLAP's command contracts and real CLI workers.
  */
-export function executeCommand(
+export async function executeCommand(
   command: AdapterCommand,
   options: ExecOptions,
 ): Promise<ExecResult> {
-  return executeProcess(command, options);
+  if (command.adapter === "openrouter" && command.env?.OLAP_OPENROUTER_MODEL) {
+    await syncOpenrouterProjectModel(options.cwd, command.env.OLAP_OPENROUTER_MODEL);
+  }
+  const env = command.env
+    ? { ...process.env, ...options.env, ...command.env }
+    : options.env;
+  return executeProcess(command, { ...options, env });
 }

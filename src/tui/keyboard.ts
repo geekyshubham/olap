@@ -34,6 +34,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "verbose", description: "Toggle full agent/tool/output detail (collapse to summaries)" },
   { name: "graphify", description: "Run Graphify for this project: /graphify [target|args]" },
   { name: "headroom", description: "Run Headroom helpers: /headroom [perf|stats|args]" },
+  { name: "watch", description: "Toggle overnight orchestrator watch mode (olap serve tick loop)" },
+  { name: "team", description: "Show agent team status and task queue" },
+  { name: "goal", description: "Add autonomous goal: /goal <title>" },
   { name: "clear", description: "Clear the conversation and metrics" },
   { name: "quit", description: "Exit OLAP" },
 ];
@@ -70,7 +73,7 @@ export const HELP_LINES = [
   "  /mode       plan · build · workflow",
   "  /theme      Switch color theme",
   "  /access     Approval, sandbox, network",
-  "  /adapters   Detected CLIs (grok, claude, gemini, codex, kiro, ollama)",
+  "  /adapters   Detected CLIs (grok, claude, gemini, codex, kiro, opencode, openrouter, ollama)",
   "  /usage      Toggle usage panel",
   "  /graphify   Build/query a Graphify knowledge graph (defaults to graphify .)",
   "  /headroom   Run Headroom helpers (defaults to headroom perf)",

@@ -6,6 +6,8 @@ import {
   loadModels,
   parseGrokModels,
   parseKiroModels,
+  parseOpencodeModels,
+  parseOpenrouterModels,
   resolveConfigModels,
   resolveModelsForRole,
   setDiscoveredModels,
@@ -34,7 +36,30 @@ describe("model discovery", () => {
   it("knows which adapters can be discovered", () => {
     expect(canDiscover("grok")).toBe(true);
     expect(canDiscover("kiro")).toBe(true);
+    expect(canDiscover("opencode")).toBe(true);
+    expect(canDiscover("openrouter")).toBe(true);
     expect(canDiscover("claude")).toBe(false);
+  });
+
+  it("parses opencode models output", () => {
+    const parsed = parseOpencodeModels(
+      ["opencode/claude-opus-4-8", "anthropic/claude-sonnet-4-6", ""].join("\n"),
+    );
+    expect(parsed.models).toEqual(["opencode/claude-opus-4-8", "anthropic/claude-sonnet-4-6"]);
+  });
+
+  it("parses openrouter models table output", () => {
+    const table = [
+      "┌──────────────────────────┬────────────────────┐",
+      "│ ID                       │ Name               │",
+      "├──────────────────────────┼────────────────────┤",
+      "│ anthropic/claude-sonnet-4│ Claude Sonnet 4    │",
+      "│ openrouter/auto          │ Auto Router        │",
+      "└──────────────────────────┴────────────────────┘",
+    ].join("\n");
+    const parsed = parseOpenrouterModels(table);
+    expect(parsed.models).toEqual(["anthropic/claude-sonnet-4", "openrouter/auto"]);
+    expect(parsed.details?.["openrouter/auto"]?.description).toBe("Auto Router");
   });
 
   it("parses kiro --list-models JSON with descriptions and default", () => {
@@ -82,8 +107,8 @@ describe("model discovery", () => {
     const config = structuredClone(
       (await import("../src/config/defaults.js")).DEFAULT_CONFIG,
     );
-    config.roles.orchestrator.model = "grok-4-latest";
-    config.roles.worker.model = "grok-code-fast-1";
+    config.roles.orchestrator = { adapter: "grok", model: "grok-4-latest", effort: "default" };
+    config.roles.worker = { adapter: "grok", model: "grok-code-fast-1", effort: "default" };
     const { config: resolved, warnings } = await resolveConfigModels(
       config,
       [{ id: "grok", detected: true, binary: "/bin/grok" }],

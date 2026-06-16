@@ -142,6 +142,8 @@ function donePhaseLabel(
 export interface RunLoopOptions {
   task: string;
   config: OlapConfig;
+  /** AI routing hints from orchestrator decomposition (overrides keyword routing). */
+  routeHints?: import("./routing.js").RouteHints;
   cwd: string;
   detections: AdapterDetection[];
   contextPack?: ContextPack;
@@ -356,7 +358,7 @@ export async function runOrchestratedLoop(
     emit({ type: "event", event });
   };
 
-  const route = routeTask(options.task, config.worker.loop_policy);
+  const route = routeTask(options.task, config.worker.loop_policy, options.routeHints);
   const { task: cleanedTask } = parseTaskOverride(options.task);
   emit({ type: "routing", strategy: route.strategy, reason: route.reason });
   const direct = route.strategy === "direct";

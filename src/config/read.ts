@@ -128,6 +128,11 @@ export function mergeConfig(partial: Partial<OlapConfig>): OlapConfig {
     ui: { ...DEFAULT_CONFIG.ui, ...cleaned.ui },
     access: { ...DEFAULT_CONFIG.access, ...cleaned.access },
     subagents: { ...DEFAULT_CONFIG.subagents, ...cleaned.subagents },
+    jobs: { ...(DEFAULT_CONFIG.jobs ?? {}), ...(cleaned.jobs ?? {}) },
+    orchestrator: {
+      ...DEFAULT_CONFIG.orchestrator,
+      ...(cleaned.orchestrator ?? {}),
+    },
     architect: { ...DEFAULT_CONFIG.architect, ...cleaned.architect },
     worker: { ...DEFAULT_CONFIG.worker, ...cleaned.worker },
     cost: mergeCost(cleaned.cost),

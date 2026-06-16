@@ -29,8 +29,9 @@ describe("kiro adapter", () => {
     expect(cmd.argv).toContain("--no-interactive");
     expect(cmd.argv).toContain("--trust-tools=fs_read");
     expect(cmd.argv).toContain("plan this");
-    // No --model when the role's adapter isn't kiro (defers to Kiro's default)
-    expect(cmd.argv).not.toContain("--model");
+    // Orchestrator role is kiro — uses roles.orchestrator.model
+    expect(cmd.argv).toContain("--model");
+    expect(cmd.argv).toContain("claude-opus-4.8");
     expect(cmd.shell).toContain("/bin/kiro-cli");
   });
 
@@ -93,8 +94,8 @@ describe("kiro adapter", () => {
     expect(effortArgs("kiro", "default")).toEqual([]);
 
     const config = structuredClone(DEFAULT_CONFIG);
-    config.roles.worker = { adapter: "kiro", model: "", effort: "high" };
-    const cmd = buildWorkerCommand("kiro", "do it", config);
+    config.roles.orchestrator = { adapter: "kiro", model: "claude-opus-4.8", effort: "high" };
+    const cmd = buildArchitectCommand("kiro", "plan", config);
     expect(cmd.argv).toContain("--effort");
     expect(cmd.argv).toContain("high");
   });

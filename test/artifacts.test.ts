@@ -20,7 +20,14 @@ describe("artifacts", () => {
     const cwd = await createTempDir();
     const runId = createRunId(new Date("2026-06-12T10:00:00.000Z"));
     const task = "Build OLAP CLI";
-    const config = { ...DEFAULT_CONFIG, ui: { ...DEFAULT_CONFIG.ui, mode: "plan" as const } };
+    const config = {
+      ...DEFAULT_CONFIG,
+      roles: {
+        orchestrator: { adapter: "grok" as const, model: "grok-composer-2.5-fast", effort: "default" },
+        worker: { adapter: "grok" as const, model: "grok-composer-2.5-fast", effort: "default" },
+      },
+      ui: { ...DEFAULT_CONFIG.ui, mode: "plan" as const },
+    };
     const execute = async (command: AdapterCommand, options: ExecOptions): Promise<ExecResult> => {
       const stdout =
         command.step === "plan"

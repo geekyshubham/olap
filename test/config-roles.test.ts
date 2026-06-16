@@ -7,8 +7,8 @@ import { serializeConfig } from "../src/config/write.js";
 describe("config roles, ui, access, subagents", () => {
   it("ships sensible defaults", () => {
     expect(DEFAULT_CONFIG.roles.orchestrator).toEqual({
-      adapter: "grok",
-      model: "grok-composer-2.5-fast",
+      adapter: "kiro",
+      model: "claude-opus-4.8",
       effort: "default",
     });
     expect(DEFAULT_CONFIG.roles.worker).toEqual({
@@ -22,7 +22,7 @@ describe("config roles, ui, access, subagents", () => {
       sandbox: "workspace-write",
       network: false,
     });
-    expect(DEFAULT_CONFIG.subagents).toEqual({ enabled: false, max_parallel: 1 });
+    expect(DEFAULT_CONFIG.subagents).toEqual({ enabled: true, max_parallel: 4 });
   });
 
   it("serializes the new sections", () => {
@@ -96,6 +96,6 @@ describe("config roles, ui, access, subagents", () => {
     expect(config.adapters.preferred).toBe("claude");
     expect(config.roles.orchestrator).toEqual(DEFAULT_CONFIG.roles.orchestrator);
     expect(config.ui.theme).toBe("mono");
-    expect(config.subagents.max_parallel).toBe(1);
+    expect(config.subagents.max_parallel).toBe(4);
   });
 });

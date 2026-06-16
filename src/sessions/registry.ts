@@ -75,6 +75,8 @@ export function normalizeSessionRecord(
       partial.adapter === "gemini" ||
       partial.adapter === "codex" ||
       partial.adapter === "kiro" ||
+      partial.adapter === "opencode" ||
+      partial.adapter === "openrouter" ||
       partial.adapter === "ollama"
         ? partial.adapter
         : "none",

@@ -231,6 +231,7 @@ function pushParsedObject(value: unknown, out: Record<string, unknown>[]): void 
 
 /** Strip ANSI color / style sequences from terminal CLI output. */
 export function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex -- intentional ESC stripping
   return text.replace(/\u001b\[[0-9;]*m/g, "");
 }
 

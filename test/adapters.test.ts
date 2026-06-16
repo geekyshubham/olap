@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 import { createTempDir, writeFakeBinary } from "./helpers.js";
 
 describe("adapters", () => {
-  it("detects fake grok/claude/gemini/codex/kiro/ollama binaries on PATH", async () => {
+  it("detects fake grok/claude/gemini/codex/kiro/opencode/openrouter/ollama binaries on PATH", async () => {
     const binDir = await createTempDir("olap-bin-");
     await Promise.all([
       writeFakeBinary(binDir, "grok"),
@@ -13,6 +13,8 @@ describe("adapters", () => {
       writeFakeBinary(binDir, "gemini"),
       writeFakeBinary(binDir, "codex"),
       writeFakeBinary(binDir, "kiro-cli"),
+      writeFakeBinary(binDir, "opencode"),
+      writeFakeBinary(binDir, "openrouter"),
       writeFakeBinary(binDir, "ollama"),
     ]);
 
@@ -20,7 +22,16 @@ describe("adapters", () => {
     const detections = await detectAdapters(pathEnv);
     const detected = detections.filter((d) => d.detected).map((d) => d.id);
 
-    expect(detected).toEqual(["grok", "claude", "gemini", "codex", "kiro", "ollama"]);
+    expect(detected).toEqual([
+      "grok",
+      "claude",
+      "gemini",
+      "codex",
+      "kiro",
+      "opencode",
+      "openrouter",
+      "ollama",
+    ]);
   });
 
   it("findBinary returns undefined when missing", async () => {

@@ -45,6 +45,9 @@ import {
 import { OlapEditor } from "./editor.js";
 import { formatModelBadge } from "./format.js";
 import { resolveGlobalKey, SHORTCUT_HINTS, SHORTCUT_HINTS_RUNNING, SLASH_COMMANDS } from "./keyboard.js";
+import { TeamPanelComponent } from "./team-panel.js";
+import { OrchestratorEngine } from "../orchestrator/engine.js";
+import { ensureOlapWorkspace } from "../services/bootstrap.js";
 import { buildModelSelectList, buildSettingsList } from "./overlays.js";
 import {
   getTheme,
@@ -86,6 +89,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   const roleBadge = (role: RoleId): string =>
     config.roles[role].model || config.roles[role].adapter;
 
+  const teamPanel = new TeamPanelComponent(theme);
   const contextBar = new ContextBarComponent({
     repo,
     cwd,
@@ -106,10 +110,11 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   const reservedRows = (): number => {
     const bannerRows = banner.chromeRowCount(terminal.columns);
     const contextBarRows = 1;
+    const teamPanelRows = Math.max(2, teamPanel.render(terminal.columns).length);
     const usageRows = usage.chromeRowCount();
     const editorRows = 3;
     const footerRows = 1;
-    return bannerRows + contextBarRows + usageRows + editorRows + footerRows;
+    return bannerRows + contextBarRows + teamPanelRows + usageRows + editorRows + footerRows;
   };
   conversation.setReservedRows(reservedRows);
   const footer = new FooterComponent({
@@ -131,6 +136,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   const layout = new Container();
   layout.addChild(banner);
   layout.addChild(contextBar);
+  layout.addChild(teamPanel);
   layout.addChild(conversation);
   layout.addChild(usage);
   layout.addChild(editor);
@@ -146,6 +152,77 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
   let abortController: AbortController | undefined;
   let pendingTask: string | undefined;
   let cancelledByUser = false;
+  let watchEngine: OrchestratorEngine | undefined;
+  let teamRefreshTimer: NodeJS.Timeout | undefined;
+
+  const refreshTeamPanel = async (): Promise<void> => {
+    if (!watchEngine) {
+      teamPanel.update({ watchActive: false });
+      return;
+    }
+    const { agents, tasks } = watchEngine.getStores();
+    const agentList = await agents.list();
+    const taskList = await tasks.list();
+    const queued = taskList.filter((t) => t.status === "todo" || t.status === "retrying").length;
+    const running = agentList.filter((a) => a.status === "running").length;
+    teamPanel.update({
+      agents: agentList,
+      tasks: taskList,
+      running,
+      queued,
+      watchActive: true,
+    });
+    tui.requestRender();
+  };
+
+  const startWatch = async (): Promise<void> => {
+    if (watchEngine) {
+      conversation.addNote("Watch mode already active", "dim");
+      return;
+    }
+    await ensureOlapWorkspace(cwd);
+    watchEngine = new OrchestratorEngine({ cwd, tickIntervalMs: config.orchestrator?.tick_interval_ms ?? 10_000 });
+    await watchEngine.init();
+    watchEngine.events.on((event) => {
+      if (event.type === "task:created") {
+        conversation.addNote(`Task created: ${event.title}`, "dim");
+      }
+      if (event.type === "agent:started") {
+        conversation.addNote(`▶ ${event.agentId} → ${event.taskId}`, "success");
+      }
+      if (event.type === "agent:completed") {
+        conversation.addNote(
+          `${event.ok ? "✓" : "✗"} ${event.agentId} finished ${event.taskId}`,
+          event.ok ? "success" : "warn",
+        );
+      }
+      void refreshTeamPanel();
+    });
+    try {
+      await watchEngine.startWatch();
+      conversation.addNote("Watch mode ON — orchestrator ticking (overnight)", "success");
+      teamRefreshTimer = setInterval(() => void refreshTeamPanel(), 3000);
+      teamRefreshTimer.unref?.();
+      await refreshTeamPanel();
+    } catch (err) {
+      watchEngine = undefined;
+      conversation.addNote(
+        err instanceof Error ? err.message : String(err),
+        "warn",
+      );
+    }
+  };
+
+  const stopWatch = async (): Promise<void> => {
+    if (!watchEngine) return;
+    await watchEngine.stop();
+    watchEngine = undefined;
+    if (teamRefreshTimer) clearInterval(teamRefreshTimer);
+    teamRefreshTimer = undefined;
+    teamPanel.update({ watchActive: false, agents: [], tasks: [] });
+    conversation.addNote("Watch mode OFF", "dim");
+    tui.requestRender();
+  };
 
   const startSpinner = (): void => {
     if (spinnerTimer) return;
@@ -437,6 +514,25 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
       case "headroom":
         void runToolFromTui("headroom", arg);
         return;
+      case "watch":
+        if (watchEngine) await stopWatch();
+        else await startWatch();
+        break;
+      case "team":
+        await refreshTeamPanel();
+        conversation.addNote("Team panel refreshed — agents and tasks above", "dim");
+        break;
+      case "goal":
+        if (!arg) {
+          conversation.addNote("Usage: /goal <title>", "warn");
+        } else {
+          const { enqueueGoal } = await import("../orchestrator/engine.js");
+          await ensureOlapWorkspace(cwd);
+          const goal = await enqueueGoal(cwd, arg);
+          conversation.addNote(`Goal queued: ${goal.id} — ${goal.title}`, "success");
+          if (!watchEngine) await startWatch();
+        }
+        break;
       case "clear":
         doClear();
         return;
@@ -645,6 +741,7 @@ export async function startTui(cwd = process.cwd()): Promise<void> {
 
   const cleanupAndExit = (): void => {
     stopSpinner();
+    void stopWatch();
     abortController?.abort();
     tui.stop();
     if (sessionHasRuns) {

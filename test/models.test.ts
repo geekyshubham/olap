@@ -16,7 +16,11 @@ describe("model catalog", () => {
 
   it("suggests role-appropriate defaults", () => {
     expect(defaultModelFor("grok", "worker")).toBe("grok-composer-2.5-fast");
-    expect(defaultModelFor("grok", "orchestrator")).toBe("grok-composer-2.5-fast");
+    expect(defaultModelFor("grok", "orchestrator")).toBe("grok-4-latest");
+    expect(defaultModelFor("kiro", "worker")).toBe("");
+    expect(defaultModelFor("kiro", "orchestrator")).toBe("");
+    expect(defaultModelFor("opencode", "orchestrator")).toBe("opencode/claude-opus-4-8");
+    expect(defaultModelFor("openrouter", "orchestrator")).toBe("anthropic/claude-sonnet-4");
   });
 
   it("finds models and orders by role suitability", () => {
@@ -28,8 +32,11 @@ describe("model catalog", () => {
   it("marks selected role models in the listing", () => {
     const listing = buildModelListing(DEFAULT_CONFIG);
     const grok = listing.find((l) => l.adapter === "grok");
-    const selected = grok?.models.find((m) => m.id === "grok-composer-2.5-fast");
-    expect(selected?.selectedFor).toContain("orchestrator");
-    expect(selected?.selectedFor).toContain("worker");
+    const worker = grok?.models.find((m) => m.id === "grok-composer-2.5-fast");
+    expect(worker?.selectedFor).toContain("worker");
+    expect(DEFAULT_CONFIG.roles.orchestrator.adapter).toBe("kiro");
+    expect(DEFAULT_CONFIG.roles.orchestrator.model).toBe("claude-opus-4.8");
+    expect(DEFAULT_CONFIG.roles.worker.adapter).toBe("grok");
+    expect(DEFAULT_CONFIG.roles.worker.model).toBe("grok-composer-2.5-fast");
   });
 });

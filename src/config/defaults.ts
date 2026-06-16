@@ -12,7 +12,9 @@ export const DEFAULT_CONFIG: OlapConfig = {
       claude: { model: "sonnet", extra_args: [] },
       gemini: { model: "gemini-2.5-pro", extra_args: [] },
       codex: { model: "gpt-5-codex", extra_args: [] },
-      kiro: { model: "", extra_args: [] },
+      kiro: { model: "claude-opus-4.8", extra_args: [] },
+      opencode: { model: "opencode/claude-opus-4-8", extra_args: [] },
+      openrouter: { model: "anthropic/claude-sonnet-4", extra_args: [] },
       ollama: { model: "qwen2.5-coder:7b", extra_args: [] },
     },
     capabilities: {
@@ -61,6 +63,26 @@ export const DEFAULT_CONFIG: OlapConfig = {
         local: false,
         notes: "Kiro manages model selection and trusted tool scopes.",
       },
+      opencode: {
+        planning: true,
+        review: true,
+        file_edits: true,
+        shell: true,
+        model_discovery: true,
+        local: false,
+        notes:
+          "OpenCode agentic CLI; use opencode/<model> for Zen subscriptions or provider/model for BYOK.",
+      },
+      openrouter: {
+        planning: true,
+        review: true,
+        file_edits: false,
+        shell: false,
+        model_discovery: true,
+        local: false,
+        notes:
+          "OpenRouter chat CLI (openrouter ask). Text-only; syncs role model into .openrouterrc before each run.",
+      },
       ollama: {
         planning: true,
         review: true,
@@ -73,8 +95,21 @@ export const DEFAULT_CONFIG: OlapConfig = {
     },
   },
   roles: {
-    orchestrator: { adapter: "grok", model: "grok-composer-2.5-fast", effort: "default" },
+    orchestrator: { adapter: "kiro", model: "claude-opus-4.8", effort: "default" },
     worker: { adapter: "grok", model: "grok-composer-2.5-fast", effort: "default" },
+  },
+  jobs: {
+    orchestrator: { adapter: "kiro", model: "claude-opus-4.8", effort: "default" },
+    architect: { adapter: "kiro", model: "claude-opus-4.8", effort: "default" },
+    reviewer: { adapter: "kiro", model: "claude-opus-4.8", effort: "default" },
+    worker: { adapter: "grok", model: "grok-composer-2.5-fast", effort: "default" },
+    qa: { adapter: "grok", model: "grok-composer-2.5-fast", effort: "default" },
+  },
+  orchestrator: {
+    enabled: true,
+    tick_interval_ms: 10_000,
+    max_concurrent_agents: 4,
+    workspace_mode: "worktree",
   },
   ui: {
     theme: "mono",
@@ -88,8 +123,8 @@ export const DEFAULT_CONFIG: OlapConfig = {
     network: false,
   },
   subagents: {
-    enabled: false,
-    max_parallel: 1,
+    enabled: true,
+    max_parallel: 4,
   },
   architect: {
     output_budget_tokens: 4096,
@@ -113,6 +148,8 @@ export const DEFAULT_CONFIG: OlapConfig = {
     session_budget_usd: 0,
     prices_per_million_tokens: {
       grok: {
+        "grok-4-latest": { input: 3, output: 15 },
+        "grok-4": { input: 3, output: 15 },
         "grok-composer-2.5-fast": { input: 1.25, output: 2.5 },
         "grok-build": { input: 1, output: 2 },
         "grok-code-fast-1": { input: 0.2, output: 1.5 },
@@ -131,6 +168,15 @@ export const DEFAULT_CONFIG: OlapConfig = {
         "gpt-5-codex": { input: 1.25, output: 10 },
         "gpt-5": { input: 1.25, output: 10 },
         "o4-mini": { input: 1.1, output: 4.4 },
+      },
+      opencode: {
+        "opencode/claude-opus-4-8": { input: 5, output: 25 },
+        "opencode/gpt-5.3-codex": { input: 1.75, output: 14 },
+        "opencode/grok-build-0.1": { input: 1, output: 2 },
+      },
+      openrouter: {
+        "anthropic/claude-sonnet-4": { input: 3, output: 15 },
+        "anthropic/claude-opus-4": { input: 15, output: 75 },
       },
       ollama: {
         "qwen2.5-coder:7b": { input: 0, output: 0 },

@@ -1,4 +1,12 @@
-export type AdapterId = "grok" | "claude" | "gemini" | "codex" | "kiro" | "ollama";
+export type AdapterId =
+  | "grok"
+  | "claude"
+  | "gemini"
+  | "codex"
+  | "kiro"
+  | "opencode"
+  | "openrouter"
+  | "ollama";
 
 export type ArchitectVerdict = "pass" | "revise" | "fail";
 
@@ -6,6 +14,14 @@ export type TaskComplexity = "trivial" | "moderate" | "complex";
 
 /** Roles that map to a concrete adapter + model. */
 export type RoleId = "orchestrator" | "worker";
+
+/** Agent job types for multi-agent orchestration (maps to skills + model binding). */
+export type AgentJobType =
+  | "orchestrator"
+  | "architect"
+  | "worker"
+  | "qa"
+  | "reviewer";
 
 /** High-level operating mode, surfaced in the TUI and used to gate worker execution. */
 export type WorkMode = "plan" | "build" | "workflow";
@@ -79,8 +95,25 @@ export interface AccessConfig {
 
 export interface SubagentConfig {
   enabled: boolean;
-  /** Maximum worker sub-agents allowed to run in parallel. */
+  /** Maximum agents allowed to run in parallel. */
   max_parallel: number;
+}
+
+/** Per-job model binding — which adapter/model handles each agent job type. */
+export interface JobModelConfig {
+  adapter: AdapterId;
+  model: string;
+  effort?: string;
+}
+
+export interface OrchestratorDaemonConfig {
+  enabled: boolean;
+  /** Poll interval for the tick loop (ms). */
+  tick_interval_ms: number;
+  /** Max concurrent agent processes. */
+  max_concurrent_agents: number;
+  /** Default git workspace isolation for tasks. */
+  workspace_mode: "shared" | "worktree";
 }
 
 export interface ValidatorConfig {
@@ -116,6 +149,9 @@ export interface OlapConfig {
   };
   /** Role-based model selection: orchestrator plans/reviews, worker codes. */
   roles: Record<RoleId, RoleConfig>;
+  /** Per-job model mapping for named agents (Architect, QA, Reviewer, Worker). */
+  jobs?: Partial<Record<AgentJobType, JobModelConfig>>;
+  orchestrator: OrchestratorDaemonConfig;
   ui: UiConfig;
   access: AccessConfig;
   subagents: SubagentConfig;
@@ -158,6 +194,8 @@ export interface AdapterCommand {
   argv: string[];
   shell: string;
   phase: "architect" | "worker";
+  /** Optional env overrides merged into the spawn environment. */
+  env?: Record<string, string>;
   /** What this invocation does within a phase. */
   step?: "plan" | "implement" | "review";
   /** True when this exact command was actually spawned (vs only planned). */

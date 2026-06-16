@@ -35,6 +35,18 @@ function isolatedEnv(binDir: string): NodeJS.ProcessEnv {
   return { PATH: `${binDir}:${nodeDir}:/usr/bin:/bin`, HOME: process.env.HOME };
 }
 
+async function patchConfig(
+  dir: string,
+  patch: (config: import("../src/types.js").OlapConfig) => void,
+): Promise<void> {
+  const { readConfig } = await import("../src/config/read.js");
+  const { serializeConfig } = await import("../src/config/write.js");
+  const { writeFile } = await import("node:fs/promises");
+  const config = await readConfig(dir);
+  patch(config);
+  await writeFile(join(dir, "olap.config.yaml"), serializeConfig(config), "utf8");
+}
+
 async function setupE2eRepo(): Promise<{ dir: string; env: NodeJS.ProcessEnv }> {
   const dir = await createTempDir("olap-e2e-");
   const binDir = join(dir, "bin");
@@ -51,6 +63,21 @@ async function setupE2eRepo(): Promise<{ dir: string; env: NodeJS.ProcessEnv }> 
   const init = await runCli(["init"], { cwd: dir, env });
   expect(init.exitCode).toBe(0);
 
+  // E2E isolated PATH only ships a fake grok binary — pin roles for runnable tests.
+  await patchConfig(dir, (config) => {
+    config.adapters.preferred = "grok";
+    config.roles.orchestrator = {
+      adapter: "grok",
+      model: "grok-composer-2.5-fast",
+      effort: "default",
+    };
+    config.roles.worker = {
+      adapter: "grok",
+      model: "grok-composer-2.5-fast",
+      effort: "default",
+    };
+  });
+
   return { dir, env };
 }
 
@@ -60,18 +87,6 @@ async function setValidators(dir: string, command: string): Promise<void> {
   const { writeFile } = await import("node:fs/promises");
   const config = await readConfig(dir);
   config.validators = [{ name: "noop", command }];
-  await writeFile(join(dir, "olap.config.yaml"), serializeConfig(config), "utf8");
-}
-
-async function patchConfig(
-  dir: string,
-  patch: (config: import("../src/types.js").OlapConfig) => void,
-): Promise<void> {
-  const { readConfig } = await import("../src/config/read.js");
-  const { serializeConfig } = await import("../src/config/write.js");
-  const { writeFile } = await import("node:fs/promises");
-  const config = await readConfig(dir);
-  patch(config);
   await writeFile(join(dir, "olap.config.yaml"), serializeConfig(config), "utf8");
 }
 
@@ -104,6 +119,7 @@ describe("E2E CLI", () => {
 
     const adapters = await runCli(["adapters"], { cwd: dir, env });
     expect(adapters.stdout).toContain("grok: detected");
+    expect(adapters.stdout).toContain("kiro:");
 
     const models = await runCli(["models"], { cwd: dir, env });
     expect(models.stdout).toContain("grok");

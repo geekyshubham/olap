@@ -133,9 +133,27 @@ export function parseTaskOverride(task: string): { task: string; force?: RunStra
  *  3. Natural-language intent for this task (auto policy only).
  *  4. Keyword scoring (operational vs implementation), then prompt length.
  */
-export function routeTask(task: string, policy: LoopPolicy): RouteDecision {
+export interface RouteHints {
+  /** AI-assigned strategy from orchestrator decomposition. */
+  strategy?: RunStrategy;
+  complexity?: TaskComplexity;
+  reason?: string;
+}
+
+export function routeTask(
+  task: string,
+  policy: LoopPolicy,
+  hints?: RouteHints,
+): RouteDecision {
   const { task: cleaned, force } = parseTaskOverride(task);
-  const complexity = classifyTaskComplexity(cleaned);
+  if (hints?.strategy && !force) {
+    return {
+      strategy: hints.strategy,
+      complexity: hints.complexity ?? "moderate",
+      reason: hints.reason ?? "orchestrator classification",
+    };
+  }
+  const complexity = hints?.complexity ?? classifyTaskComplexity(cleaned);
   if (force) {
     return {
       strategy: force,

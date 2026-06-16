@@ -21,8 +21,8 @@ export const MODEL_CATALOG: Record<AdapterId, ModelInfo[]> = {
     {
       id: "grok-composer-2.5-fast",
       label: "Grok Composer 2.5 Fast",
-      description: "Default Grok CLI model; balanced planning and coding.",
-      goodFor: ["orchestrator", "worker"],
+      description: "Fast worker model for implementation and QA.",
+      goodFor: ["worker"],
     },
     {
       id: "grok-build",
@@ -124,6 +124,82 @@ export const MODEL_CATALOG: Record<AdapterId, ModelInfo[]> = {
   // Kiro manages its own model list (selected via `kiro-cli settings` or `--model`).
   // Left empty so OLAP defers to Kiro's configured default unless you pick one.
   kiro: [],
+  opencode: [
+    {
+      id: "opencode/claude-opus-4-8",
+      label: "Zen Claude Opus 4.8",
+      description: "OpenCode Zen curated Opus for planning and review.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "opencode/claude-sonnet-4-6",
+      label: "Zen Claude Sonnet 4.6",
+      description: "Balanced Zen model for orchestration.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "opencode/gpt-5.3-codex",
+      label: "Zen GPT 5.3 Codex",
+      description: "Coding-focused Zen model for workers.",
+      goodFor: ["worker"],
+    },
+    {
+      id: "opencode/grok-build-0.1",
+      label: "Zen Grok Build 0.1",
+      description: "Fast Zen coding worker.",
+      goodFor: ["worker"],
+    },
+    {
+      id: "anthropic/claude-opus-4-5",
+      label: "Anthropic Opus 4.5 (BYOK)",
+      description: "Bring-your-own-key via opencode auth login.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "openai/gpt-5-codex",
+      label: "OpenAI GPT 5 Codex (BYOK)",
+      description: "Provider model through opencode run.",
+      goodFor: ["worker"],
+    },
+  ],
+  openrouter: [
+    {
+      id: "anthropic/claude-sonnet-4",
+      label: "Claude Sonnet 4",
+      description: "Strong reasoning via OpenRouter.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "anthropic/claude-opus-4",
+      label: "Claude Opus 4",
+      description: "Deep planning and review via OpenRouter.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "openai/gpt-4o",
+      label: "GPT-4o",
+      description: "General-purpose OpenRouter model.",
+      goodFor: ["orchestrator", "worker"],
+    },
+    {
+      id: "google/gemini-2.5-pro",
+      label: "Gemini 2.5 Pro",
+      description: "Large-context OpenRouter model.",
+      goodFor: ["orchestrator"],
+    },
+    {
+      id: "meta-llama/llama-3.1-8b-instruct",
+      label: "Llama 3.1 8B",
+      description: "Default openrouter-cli model; inexpensive worker.",
+      goodFor: ["worker"],
+    },
+    {
+      id: "openrouter/auto",
+      label: "OpenRouter Auto",
+      description: "Let OpenRouter route to the best model.",
+      goodFor: ["orchestrator", "worker"],
+    },
+  ],
   ollama: [
     {
       id: "qwen2.5-coder:7b",

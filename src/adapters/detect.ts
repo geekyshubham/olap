@@ -8,6 +8,8 @@ export const ADAPTER_SPECS: AdapterSpec[] = [
   { id: "gemini", binaries: ["gemini", "gemini-cli"] },
   { id: "codex", binaries: ["codex", "codex-cli"] },
   { id: "kiro", binaries: ["kiro-cli", "kiro"] },
+  { id: "opencode", binaries: ["opencode"] },
+  { id: "openrouter", binaries: ["openrouter", "openrouter-cli"] },
   { id: "ollama", binaries: ["ollama"] },
 ];
 

@@ -38,6 +38,8 @@ const ADAPTER_VENDOR: Record<string, string> = {
   grok: "xai",
   claude: "anthropic",
   kiro: "anthropic",
+  opencode: "anthropic",
+  openrouter: "openrouter",
   gemini: "google",
   codex: "openai",
   openai: "openai",

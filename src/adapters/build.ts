@@ -56,6 +56,8 @@ export function effortArgs(adapterId: AdapterId, effort: string | undefined): st
       const level = effort === "xhigh" || effort === "max" ? "high" : effort;
       return ["-c", `model_reasoning_effort="${level}"`];
     }
+    case "opencode":
+      return ["--variant", effort];
     default:
       return [];
   }
@@ -136,6 +138,24 @@ export function kiroTrustArgs(
     return ["--trust-tools="];
   }
   return ["--trust-tools=fs_read,fs_write"];
+}
+
+/** OpenCode run permission flags mapped from access (architect stays read-only). */
+export function opencodePermissionArgs(
+  access: AccessConfig,
+  phase: "architect" | "worker",
+): string[] {
+  if (phase === "architect") return [];
+  if (access.sandbox === "danger-full-access" || access.approval === "never") {
+    return ["--dangerously-skip-permissions"];
+  }
+  return [];
+}
+
+/** OpenRouter model hint via project rc env (merged into spawn env). */
+export function openrouterModelEnv(model: string | undefined): Record<string, string> | undefined {
+  if (!model?.trim()) return undefined;
+  return { OLAP_OPENROUTER_MODEL: model.trim() };
 }
 
 export function buildArchitectCommand(
@@ -237,6 +257,40 @@ export function buildArchitectCommand(
         ],
         shell: "",
         phase: "architect",
+      };
+    case "opencode":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "run",
+          "--format",
+          "json",
+          ...modelAndEffortArgs(adapterId, model, effort),
+          ...opencodePermissionArgs(config.access, "architect"),
+          ...opts.extra_args,
+          prompt,
+        ],
+        shell: "",
+        phase: "architect",
+      };
+    case "openrouter":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "ask",
+          "--format",
+          "plain",
+          "--no-init",
+          ...opts.extra_args,
+          prompt,
+        ],
+        shell: "",
+        phase: "architect",
+        env: openrouterModelEnv(model),
       };
     case "ollama":
       return {
@@ -357,6 +411,40 @@ export function buildWorkerCommand(
         ],
         shell: "",
         phase: "worker",
+      };
+    case "opencode":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "run",
+          "--format",
+          "json",
+          ...modelAndEffortArgs(adapterId, model, effort),
+          ...opencodePermissionArgs(access, "worker"),
+          ...opts.extra_args,
+          task,
+        ],
+        shell: "",
+        phase: "worker",
+      };
+    case "openrouter":
+      return {
+        adapter: adapterId,
+        binary,
+        argv: [
+          binary,
+          "ask",
+          "--format",
+          "plain",
+          "--no-init",
+          ...opts.extra_args,
+          task,
+        ],
+        shell: "",
+        phase: "worker",
+        env: openrouterModelEnv(model),
       };
     case "ollama":
       return {

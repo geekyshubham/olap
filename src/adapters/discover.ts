@@ -34,6 +34,41 @@ export function parseGrokModels(output: string): DiscoveredModels {
   return { models, default: def };
 }
 
+/** Parse `opencode models` output (`provider/model` per line). */
+export function parseOpencodeModels(output: string): DiscoveredModels {
+  const models: string[] = [];
+  const details: Record<string, { description?: string }> = {};
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("Model")) continue;
+    const id = line.split(/\s+/)[0];
+    if (!id?.includes("/") || models.includes(id)) continue;
+    models.push(id);
+    details[id] = { description: "Reported by opencode models" };
+  }
+  return { models, details };
+}
+
+/** Parse `openrouter models --non-interactive` table output. */
+export function parseOpenrouterModels(output: string): DiscoveredModels {
+  const models: string[] = [];
+  const details: Record<string, { description?: string }> = {};
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("┌") || line.startsWith("├") || line.startsWith("└")) continue;
+    const cells = line
+      .split(/[|│]/)
+      .map((cell) => cell.trim())
+      .filter(Boolean);
+    if (cells.length < 2 || cells[0] === "ID") continue;
+    const id = cells[0];
+    if (!id || models.includes(id)) continue;
+    models.push(id);
+    details[id] = { description: cells[1] };
+  }
+  return { models, details };
+}
+
 /** Parse `kiro-cli chat --list-models --format json` output. */
 export function parseKiroModels(output: string): DiscoveredModels {
   try {
@@ -61,6 +96,8 @@ const LIST_COMMANDS: Partial<
 > = {
   grok: { args: ["models"], parse: parseGrokModels },
   kiro: { args: ["chat", "--list-models", "--format", "json"], parse: parseKiroModels },
+  opencode: { args: ["models"], parse: parseOpencodeModels },
+  openrouter: { args: ["models", "--non-interactive"], parse: parseOpenrouterModels },
 };
 
 const defaultExec: ModelExec = (binary, args, timeoutMs) =>

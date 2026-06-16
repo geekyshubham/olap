@@ -5,6 +5,7 @@ import { resolveConfigModels } from "../adapters/discover.js";
 import { CONFIG_FILENAME } from "../config/defaults.js";
 import { cloneConfig } from "../config/read.js";
 import { writeConfig } from "../config/write.js";
+import { ensureOlapWorkspace } from "../services/bootstrap.js";
 
 export async function initCommand(cwd = process.cwd()): Promise<string> {
   const path = resolve(cwd, CONFIG_FILENAME);
@@ -21,5 +22,6 @@ export async function initCommand(cwd = process.cwd()): Promise<string> {
   for (const warning of warnings) {
     console.warn(`olap init: ${warning}`);
   }
+  await ensureOlapWorkspace(cwd);
   return writeConfig(cwd, config);
 }

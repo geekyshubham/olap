@@ -16,7 +16,13 @@ adapters:
       model: gpt-5-codex
       extra_args: []
     kiro:
-      model: ""
+      model: claude-opus-4.8
+      extra_args: []
+    opencode:
+      model: opencode/claude-opus-4-8
+      extra_args: []
+    openrouter:
+      model: anthropic/claude-sonnet-4
       extra_args: []
     ollama:
       model: qwen2.5-coder:7b
@@ -62,6 +68,22 @@ adapters:
       model_discovery: true
       local: false
       notes: Kiro manages model selection and trusted tool scopes.
+    opencode:
+      planning: true
+      review: true
+      file_edits: true
+      shell: true
+      model_discovery: true
+      local: false
+      notes: OpenCode agentic CLI; use opencode/<model> for Zen subscriptions.
+    openrouter:
+      planning: true
+      review: true
+      file_edits: false
+      shell: false
+      model_discovery: true
+      local: false
+      notes: OpenRouter chat CLI; text-only orchestration via openrouter ask.
     ollama:
       planning: true
       review: true
@@ -72,13 +94,39 @@ adapters:
       notes: Local text model adapter. Best for plan/review or custom text-only workflows.
 roles:
   orchestrator:
-    adapter: grok
-    model: grok-composer-2.5-fast
+    adapter: kiro
+    model: claude-opus-4.8
     effort: default
   worker:
     adapter: grok
     model: grok-composer-2.5-fast
     effort: default
+jobs:
+  orchestrator:
+    adapter: kiro
+    model: claude-opus-4.8
+    effort: default
+  architect:
+    adapter: kiro
+    model: claude-opus-4.8
+    effort: default
+  reviewer:
+    adapter: kiro
+    model: claude-opus-4.8
+    effort: default
+  worker:
+    adapter: grok
+    model: grok-composer-2.5-fast
+    effort: default
+  qa:
+    adapter: grok
+    model: grok-composer-2.5-fast
+    effort: default
+orchestrator:
+  enabled: true
+  tick_interval_ms: 10000
+  max_concurrent_agents: 4
+  workspace_mode: worktree
 ui:
   theme: mono
   mode: build
@@ -89,8 +137,8 @@ access:
   sandbox: danger-full-access
   network: false
 subagents:
-  enabled: false
-  max_parallel: 1
+  enabled: true
+  max_parallel: 4
 architect:
   output_budget_tokens: 4096
   context_pack_max_tokens: 32000
@@ -148,6 +196,21 @@ cost:
       o4-mini:
         input: 1.1
         output: 4.4
+    kiro:
+      claude-opus-4.8:
+        input: 5
+        output: 25
+    opencode:
+      opencode/claude-opus-4-8:
+        input: 5
+        output: 25
+      opencode/gpt-5.3-codex:
+        input: 1.75
+        output: 14
+    openrouter:
+      anthropic/claude-sonnet-4:
+        input: 3
+        output: 15
     ollama:
       qwen2.5-coder:7b:
         input: 0

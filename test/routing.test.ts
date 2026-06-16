@@ -83,7 +83,7 @@ describe("buildRunPlan", () => {
     expect(plan.reason).toBe(routeTask("implement the auth callback tests", config.worker.loop_policy).reason);
     expect(plan.maxIterations).toBe(config.worker.max_iterations);
     expect(plan.mode).toBe(config.ui.mode);
-    expect(plan.orchestrator).toBe("grok:grok-composer-2.5-fast");
+    expect(plan.orchestrator).toBe("kiro:claude-opus-4.8");
     expect(plan.worker).toBe("grok:grok-composer-2.5-fast");
     expect(plan.stopConditions.some((s) => s.includes("cancel"))).toBe(true);
     expect(plan.stopConditions.some((s) => /max 3 iteration/.test(s))).toBe(true);

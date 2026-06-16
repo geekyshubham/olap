@@ -48,10 +48,25 @@ function changingSignature(): (cwd: string) => Promise<string> {
   };
 }
 
-function cfg(patch: (c: OlapConfig) => void): OlapConfig {
+/** Unit tests simulate grok orchestrator CLI I/O for plan/review phases. */
+function grokLoopConfig(patch?: (c: OlapConfig) => void): OlapConfig {
   const config = structuredClone(DEFAULT_CONFIG);
-  patch(config);
+  config.roles.orchestrator = {
+    adapter: "grok",
+    model: "grok-composer-2.5-fast",
+    effort: "default",
+  };
+  config.roles.worker = {
+    adapter: "grok",
+    model: "grok-composer-2.5-fast",
+    effort: "default",
+  };
+  patch?.(config);
   return config;
+}
+
+function cfg(patch: (c: OlapConfig) => void): OlapConfig {
+  return grokLoopConfig(patch);
 }
 
 /** A fake executor that records every spawned command and answers per phase/step. */

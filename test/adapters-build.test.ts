@@ -22,25 +22,22 @@ function withAccess(access: Partial<AccessConfig>): OlapConfig {
 }
 
 describe("adapter command builders", () => {
-  it("builds grok architect (plan) and worker commands using role models", () => {
-    const detection = { id: "grok" as const, detected: true, binary: "/bin/grok" };
+  it("builds kiro orchestrator and grok worker commands from hybrid role config", () => {
+    const grokDet = { id: "grok" as const, detected: true, binary: "/bin/grok" };
+    const kiroDet = { id: "kiro" as const, detected: true, binary: "/bin/kiro-cli" };
     const architect = finalizeAdapterCommand(
-      buildArchitectCommand("grok", "review task", DEFAULT_CONFIG, detection),
+      buildArchitectCommand("kiro", "review task", DEFAULT_CONFIG, kiroDet),
     );
     const worker = finalizeAdapterCommand(
-      buildWorkerCommand("grok", "implement task", DEFAULT_CONFIG, detection),
+      buildWorkerCommand("grok", "implement task", DEFAULT_CONFIG, grokDet),
     );
 
-    expect(architect.argv).toContain("--permission-mode");
-    expect(architect.argv).toContain("plan");
-    expect(architect.argv).toContain("--output-format");
-    expect(architect.argv).toContain("json");
-    expect(architect.argv).toContain("-p");
-    // orchestrator role model
-    expect(architect.argv).toContain("grok-composer-2.5-fast");
-    // worker role model + default access (on-failure/workspace-write) -> acceptEdits
+    expect(architect.argv).toContain("chat");
+    expect(architect.argv).toContain("--model");
+    expect(architect.argv).toContain("claude-opus-4.8");
+    expect(architect.shell).toContain("/bin/kiro-cli");
     expect(worker.argv).toContain("grok-composer-2.5-fast");
-    expect(worker.argv).toContain("acceptEdits");
+    expect(worker.argv).toContain("-p");
     expect(worker.shell).toContain("/bin/grok");
   });
 

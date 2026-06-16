@@ -10,6 +10,11 @@ import { modulesCommand, printModules } from "./commands/modules.js";
 import { modelsCommand, printModels } from "./commands/models.js";
 import { configCommand, printConfig } from "./commands/config.js";
 import { printToolRunResult, runToolCommand, type ToolName } from "./commands/tools.js";
+import { serveCommand } from "./commands/serve.js";
+import { orgListCommand, orgDeployCommand } from "./commands/org.js";
+import { tasksListCommand, tasksShowCommand } from "./commands/tasks.js";
+import { agentsListCommand } from "./commands/agents-cmd.js";
+import { goalAddCommand, goalListCommand } from "./commands/goal.js";
 import { readConfig } from "./config/read.js";
 import { startTui } from "./tui/app.js";
 import { PACKAGE_NAME, VERSION } from "./version.js";
@@ -66,7 +71,7 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
 
   program
     .command("adapters")
-    .description("Detect grok, claude, gemini, codex, kiro, and ollama adapters on PATH")
+    .description("Detect grok, claude, gemini, codex, kiro, opencode, openrouter, and ollama on PATH")
     .action(runCliAction(async () => {
       const detections = await adaptersCommand();
       printAdapters(detections, await readConfig());
@@ -164,6 +169,92 @@ export function createCliProgram(deps: CliDependencies = {}): Command {
     .description("Open the interactive terminal UI")
     .action(runCliAction(async () => {
       await startTuiImpl();
+    }));
+
+  program
+    .command("serve")
+    .description("Run the multi-agent orchestrator daemon (overnight / headless)")
+    .option("--once", "Process all tasks then exit (CI mode)")
+    .option("--cwd <dir>", "Project directory")
+    .option("--tick-interval <ms>", "Poll interval in milliseconds", "10000")
+    .option("--log-format <fmt>", "json or text", "json")
+    .action(
+      runCliAction(async (options: { once?: boolean; cwd?: string; tickInterval?: string; logFormat?: string }) => {
+        const code = await serveCommand({
+          cwd: options.cwd,
+          once: options.once,
+          tickIntervalMs: Number(options.tickInterval) || 10_000,
+          logFormat: options.logFormat === "text" ? "text" : "json",
+        });
+        if (code !== 0) process.exitCode = code;
+      }),
+    );
+
+  const org = program.command("org").description("Team templates and deployment");
+
+  org
+    .command("list")
+    .description("List available team templates")
+    .action(runCliAction(async () => {
+      await orgListCommand();
+    }));
+
+  org
+    .command("deploy <template>")
+    .description("Deploy a team template (e.g. startup-mvp)")
+    .option("--cwd <dir>", "Project directory")
+    .option("--goal <text>", "Create a goal after deploying the team")
+    .action(
+      runCliAction(async (template: string, options: { cwd?: string; goal?: string }) => {
+        await orgDeployCommand(template, options);
+      }),
+    );
+
+  const tasks = program.command("tasks").description("Persistent task queue");
+
+  tasks
+    .command("list")
+    .description("List all tasks")
+    .option("--cwd <dir>", "Project directory")
+    .action(runCliAction(async (options: { cwd?: string }) => {
+      await tasksListCommand(options.cwd);
+    }));
+
+  tasks
+    .command("show <id>")
+    .description("Show task details")
+    .option("--cwd <dir>", "Project directory")
+    .action(runCliAction(async (id: string, options: { cwd?: string }) => {
+      await tasksShowCommand(id, options.cwd);
+    }));
+
+  program
+    .command("agents")
+    .description("List deployed agents and their status")
+    .option("--cwd <dir>", "Project directory")
+    .action(runCliAction(async (options: { cwd?: string }) => {
+      await agentsListCommand(options.cwd);
+    }));
+
+  const goal = program.command("goal").description("High-level goals for autonomous decomposition");
+
+  goal
+    .command("add <title>")
+    .description("Add a goal (Architect decomposes on next tick)")
+    .option("--description <text>", "Extended goal description")
+    .option("--cwd <dir>", "Project directory")
+    .action(
+      runCliAction(async (title: string, options: { description?: string; cwd?: string }) => {
+        await goalAddCommand(title, options);
+      }),
+    );
+
+  goal
+    .command("list")
+    .description("List goals")
+    .option("--cwd <dir>", "Project directory")
+    .action(runCliAction(async (options: { cwd?: string }) => {
+      await goalListCommand(options.cwd);
     }));
 
   return program;

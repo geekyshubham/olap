@@ -27,7 +27,9 @@ import type {
   WorkMode,
 } from "../types.js";
 
-const ADAPTERS: AdapterId[] = ["grok", "claude", "gemini", "codex", "kiro", "ollama"];
+import { ADAPTER_IDS } from "../adapters/registry.js";
+
+const ADAPTERS: AdapterId[] = ADAPTER_IDS;
 const MODES: WorkMode[] = ["plan", "build", "workflow"];
 
 export interface RunOptions {
